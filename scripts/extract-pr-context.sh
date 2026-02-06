@@ -1,25 +1,68 @@
 #!/bin/bash
-# ABOUTME: Extracts PR context from GitHub and outputs minimal JSON with line ranges.
+# ABOUTME: Extracts PR or branch context and outputs minimal JSON with line ranges.
 
 set -e
 
-PR_NUMBER="$1"
 OUTPUT_DIR=".pr-review-temp"
 OUTPUT_FILE="$OUTPUT_DIR/pr-context.json"
 
-if [ -z "$PR_NUMBER" ]; then
+# Parse arguments: PR mode or branch mode
+MODE=""
+PR_NUMBER=0
+HEAD_BRANCH=""
+BASE_BRANCH=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --base)
+            BASE_BRANCH="$2"
+            shift 2
+            ;;
+        --branch)
+            HEAD_BRANCH="$2"
+            shift 2
+            ;;
+        *)
+            if [ -z "$MODE" ] && [[ "$1" =~ ^[0-9]+$ ]]; then
+                MODE="pr"
+                PR_NUMBER="$1"
+            else
+                echo "Unknown argument: $1" >&2
+                echo "Usage: $0 <pr_number>" >&2
+                echo "       $0 --base <base_branch> [--branch <head_branch>]" >&2
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Determine mode
+if [ -n "$BASE_BRANCH" ]; then
+    MODE="branch"
+elif [ "$MODE" != "pr" ]; then
     echo "Usage: $0 <pr_number>" >&2
+    echo "       $0 --base <base_branch> [--branch <head_branch>]" >&2
     exit 1
 fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# Fetch metadata
-META=$(gh pr view "$PR_NUMBER" --json number,title,author,headRefName,baseRefName)
-TITLE=$(echo "$META" | jq -r '.title')
-AUTHOR=$(echo "$META" | jq -r '.author.login')
-HEAD=$(echo "$META" | jq -r '.headRefName')
-BASE=$(echo "$META" | jq -r '.baseRefName')
+# Fetch metadata based on mode
+if [ "$MODE" = "pr" ]; then
+    META=$(gh pr view "$PR_NUMBER" --json number,title,author,headRefName,baseRefName)
+    TITLE=$(echo "$META" | jq -r '.title')
+    AUTHOR=$(echo "$META" | jq -r '.author.login')
+    HEAD=$(echo "$META" | jq -r '.headRefName')
+    BASE=$(echo "$META" | jq -r '.baseRefName')
+else
+    # Branch mode: derive metadata from git
+    HEAD="${HEAD_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
+    BASE="$BASE_BRANCH"
+    AUTHOR=$(git config user.name 2>/dev/null || echo "unknown")
+    COMMIT_COUNT=$(git rev-list --count "$BASE".."$HEAD" 2>/dev/null || echo "0")
+    TITLE="Branch review: $HEAD → $BASE ($COMMIT_COUNT commits)"
+fi
 
 # Initialize arrays
 declare -a CHANGED_FILES
@@ -210,7 +253,13 @@ while IFS= read -r line || [ -n "$line" ]; do
         ((CURRENT_LINE_NUM++)) || true
         continue
     fi
-done < <(gh pr diff "$PR_NUMBER")
+done < <(
+    if [ "$MODE" = "pr" ]; then
+        gh pr diff "$PR_NUMBER"
+    else
+        git diff "$BASE"..."$HEAD"
+    fi
+)
 
 # Output last file
 output_file

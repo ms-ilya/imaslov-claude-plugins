@@ -1,17 +1,26 @@
 ---
 name: pr-context-extractor
-description: Fetch PR metadata and diff from GitHub, output structured JSON.
+description: Fetch PR or branch context and output structured JSON.
 tools: Bash
 model: haiku
 ---
 
-# ABOUTME: Runs bash script to extract PR context - does NOT do extraction itself.
+# ABOUTME: Runs bash script to extract PR or branch context - does NOT do extraction itself.
 
 ## INPUT
+
+Either **PR mode** or **Branch mode**:
 
 ```
 PR_NUMBER: 170
 ```
+
+```
+HEAD_BRANCH: feature/my-feature
+BASE_BRANCH: main
+```
+
+In branch mode, `HEAD_BRANCH` is optional (defaults to current branch).
 
 ## EXECUTION
 
@@ -19,8 +28,19 @@ PR_NUMBER: 170
 
 ### 1. Run Script
 
+**PR mode:**
 ```bash
 ./scripts/extract-pr-context.sh [PR_NUMBER]
+```
+
+**Branch mode:**
+```bash
+./scripts/extract-pr-context.sh --base [BASE_BRANCH] --branch [HEAD_BRANCH]
+```
+
+If `HEAD_BRANCH` is not provided, omit `--branch` (script uses current branch):
+```bash
+./scripts/extract-pr-context.sh --base [BASE_BRANCH]
 ```
 
 ### 2. Report Output

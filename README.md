@@ -8,30 +8,40 @@ Add to Claude Code plugins.
 
 ## Usage
 
-Run commands in order using natural language:
+### Review a GitHub PR
 
 ```
-# 1. Extract PR context
 Extract context for PR 170
-
-# 2. Analyze each file
 Analyse PR 170 files
-
-# 3. Check cross-file issues
 Check cross-file issues for PR 170
-
-# 4. Generate report
 Create review report for PR 170
+```
+
+### Self-review before opening a PR
+
+Compare your branch against the base branch (where you'll open the PR):
+
+```
+Extract context for branch feature/ruler-tool where base branch main
+Analyse branch files
+Check cross-file issues for branch
+Create review report for branch
+```
+
+If you're already on the branch, omit the branch name:
+
+```
+Extract context where base branch main
 ```
 
 ## Commands
 
-| Stage | Trigger | Description |
-|-------|---------|-------------|
-| 1. Extract | "Extract context for PR 170" | Fetch PR metadata and diff from GitHub |
-| 2. Analyze | "Analyse PR 170 files" | Run per-file review (style, quality, unused code) |
-| 3. Cross-check | "Check cross-file issues for PR 170" | Find DRY violations, breaking API changes, SOLID issues |
-| 4. Report | "Create review report for PR 170" | Generate final markdown report |
+| Stage | PR trigger | Branch trigger | Description |
+|-------|-----------|---------------|-------------|
+| 1. Extract | "Extract context for PR 170" | "Extract context for branch X where base branch Y" | Fetch diff and metadata |
+| 2. Analyze | "Analyse PR 170 files" | "Analyse branch files" | Per-file review (style, quality, unused code) |
+| 3. Cross-check | "Check cross-file issues for PR 170" | "Check cross-file issues for branch" | DRY violations, breaking API changes, SOLID issues |
+| 4. Report | "Create review report for PR 170" | "Create review report for branch" | Final markdown report |
 
 ## Output
 
@@ -47,5 +57,6 @@ If interrupted, re-run the same command to continue:
 
 ## Requirements
 
-- GitHub CLI (`gh`) authenticated
-- Swift files in PR
+- GitHub CLI (`gh`) authenticated — PR mode only
+- `git` — branch mode only
+- Swift files in diff
