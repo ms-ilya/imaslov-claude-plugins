@@ -1,0 +1,9 @@
+{
+  "name": "memory-bank",
+  "description": "Living documentation system that captures current project state, organized by feature. Anti-hallucination verified.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Ilya"
+  },
+  "keywords": ["memory-bank", "documentation", "feature", "context", "wiki", "living-docs"]
+}

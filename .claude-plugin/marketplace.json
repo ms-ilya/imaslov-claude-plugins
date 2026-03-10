@@ -15,6 +15,12 @@
       "source": "./plugins/scratchpad",
       "description": "Context-preserving debugging journal. Command: /scratchpad.",
       "version": "1.0.0"
+    },
+    {
+      "name": "memory-bank",
+      "source": "./plugins/memory-bank",
+      "description": "Living project documentation with anti-hallucination verification. Commands: init, update, system-update, add-decision.",
+      "version": "1.0.0"
     }
   ]
 }

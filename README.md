@@ -50,6 +50,29 @@ Context-preserving debugging journal that persists investigation state across se
 
 Full documentation: [plugins/scratchpad/README.md](./plugins/scratchpad/README.md)
 
+### [memory-bank](./plugins/memory-bank)
+
+Living documentation system that captures current project state, organized by feature. Every claim is verified against actual source code.
+
+**What it does:**
+- Creates a structured `memory-bank/` folder with per-feature documentation
+- Deep code analysis: architecture, data flow, key types, dependencies, tests
+- Anti-hallucination verification: every file path, type name, and behavioral claim is checked against real code
+- Root-level docs: WIKI index, system patterns, tech context, troubleshooting
+
+**Commands:**
+
+| Command | What happens |
+|---------|--------------|
+| `/init-memory-bank` | Scan project and create `memory-bank/` with root-level docs |
+| `/update-memory-bank <feature>` | Document or update a specific feature (primary workflow) |
+| `/update-memory-bank-system` | Refresh root-level docs (architecture, deps, WIKI index) |
+| `/add-decision <feature>: <description>` | Record a technical decision (ADR-style) |
+
+**Requirements:** None (works in any project, optimized for Swift/iOS)
+
+Full documentation: [plugins/memory-bank/README.md](./plugins/memory-bank/README.md)
+
 ---
 
 ## Installation
