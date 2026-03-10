@@ -1,62 +1,41 @@
-# PR Review Plugin
+# imaslov-claude-plugins
 
-Multi-agent PR review for Swift codebases.
+A collection of Claude Code plugins by Ilya Maslau.
+
+## Plugins
+
+### [pr-review](./plugins/pr-review)
+
+Multi-agent PR review for Swift codebases. Runs a 4-stage pipeline with 6 specialized agents that analyze code in parallel.
+
+**What it does:**
+- Per-file analysis: unused code, force unwraps, memory leaks, threading issues, naming violations
+- Cross-file analysis: duplicate implementations (DRY), breaking API changes, SOLID violations
+- Resumable: interrupted reviews continue from where they stopped
+
+**Stages:**
+
+| Stage | Command | What happens |
+|-------|---------|--------------|
+| Extract | `Extract context for PR 170` | Parses diff, extracts symbols and signature changes |
+| Analyze | `Analyse PR 170 files` | Spawns parallel agents for per-file review (batches of 5) |
+| Cross-check | `Check cross-file issues for PR 170` | Runs DRY, breaking change, and SOLID analyzers in parallel |
+| Report | `Create review report for PR 170` | Aggregates all findings into a severity-sorted markdown report |
+
+Also supports branch-to-branch review without a PR: `Extract context for branch feature/x where base branch main`
+
+**Requirements:** `gh` CLI (PR mode), `git` (branch mode), `jq`
+
+Full documentation: [plugins/pr-review/README.md](./plugins/pr-review/README.md)
+
+---
+
+*More plugins coming soon.*
 
 ## Installation
 
-Add to Claude Code plugins.
+Add this marketplace to Claude Code plugins.
 
-## Usage
+## License
 
-### Review a GitHub PR
-
-```
-Extract context for PR 170
-Analyse PR 170 files
-Check cross-file issues for PR 170
-Create review report for PR 170
-```
-
-### Self-review before opening a PR
-
-Compare your branch against the base branch (where you'll open the PR):
-
-```
-Extract context for branch feature/ruler-tool where base branch main
-Analyse branch files
-Check cross-file issues for branch
-Create review report for branch
-```
-
-If you're already on the branch, omit the branch name:
-
-```
-Extract context where base branch main
-```
-
-## Commands
-
-| Stage | PR trigger | Branch trigger | Description |
-|-------|-----------|---------------|-------------|
-| 1. Extract | "Extract context for PR 170" | "Extract context for branch X where base branch Y" | Fetch diff and metadata |
-| 2. Analyze | "Analyse PR 170 files" | "Analyse branch files" | Per-file review (style, quality, unused code) |
-| 3. Cross-check | "Check cross-file issues for PR 170" | "Check cross-file issues for branch" | DRY violations, breaking API changes, SOLID issues |
-| 4. Report | "Create review report for PR 170" | "Create review report for branch" | Final markdown report |
-
-## Output
-
-- Temp files: `.pr-review-temp/`
-- Final report: `pr-review-temp.md`
-
-## Resumption
-
-If interrupted, re-run the same command to continue:
-- Analyze skips already-processed files
-- Cross-check skips if outputs exist
-- Report can be re-run safely
-
-## Requirements
-
-- GitHub CLI (`gh`) authenticated — PR mode only
-- `git` — branch mode only
-- Swift files in diff
+[MIT](./LICENSE)
