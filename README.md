@@ -28,9 +28,29 @@ Also supports branch-to-branch review without a PR: `Extract context for branch 
 
 Full documentation: [plugins/pr-review/README.md](./plugins/pr-review/README.md)
 
----
+### [scratchpad](./plugins/scratchpad)
 
-*More plugins coming soon.*
+Context-preserving debugging journal that persists investigation state across sessions.
+
+**What it does:**
+- Creates `.scratchpads/` directory with per-issue markdown files
+- Tracks failed approaches, edge cases, related files, and architectural decisions
+- Transforms into clean knowledge artifacts on resolution
+
+**Commands:**
+
+| Command | What happens |
+|---------|--------------|
+| `/scratchpad` | Create new or update existing scratchpad |
+| `/scratchpad resolve` | Transform and archive to resolved/ |
+| `/scratchpad abandon` | Mark as dead end, keep as warning |
+| `/scratchpad switch` | Switch active scratchpad |
+
+**Requirements:** None (works in any project)
+
+Full documentation: [plugins/scratchpad/README.md](./plugins/scratchpad/README.md)
+
+---
 
 ## Installation
 

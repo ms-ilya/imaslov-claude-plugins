@@ -9,6 +9,12 @@
       "source": "./plugins/pr-review",
       "description": "Multi-stage PR review for Swift. Commands: extract, analyze, cross-check, report.",
       "version": "1.0.0"
+    },
+    {
+      "name": "scratchpad",
+      "source": "./plugins/scratchpad",
+      "description": "Context-preserving debugging journal. Command: /scratchpad.",
+      "version": "1.0.0"
     }
   ]
 }

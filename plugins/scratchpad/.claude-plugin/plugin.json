@@ -1,0 +1,9 @@
+{
+  "name": "scratchpad",
+  "description": "Context-preserving debugging journal that persists investigation state across sessions.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Ilya"
+  },
+  "keywords": ["scratchpad", "debugging", "investigation", "context", "journal"]
+}
