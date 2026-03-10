@@ -73,6 +73,31 @@ Living documentation system that captures current project state, organized by fe
 
 Full documentation: [plugins/memory-bank/README.md](./plugins/memory-bank/README.md)
 
+### [multi-agent-debate](./plugins/multi-agent-debate)
+
+Structured multi-agent debate that spawns parallel LLM agents for adversarial analysis and synthesis.
+
+**What it does:**
+- Spawns 3–5 independent agents with unique system prompts, each arguing from a genuinely different perspective
+- 3-round structured debate: Opening Positions → Cross-Examination → Rebuttals
+- Impartial Judge synthesizes a verdict with confidence level, dissent log, and flip conditions
+- Fallback to inline simulation if API calls fail
+
+**Usage:**
+
+| Trigger | What happens |
+|---------|--------------|
+| "Debate whether we should use microservices" | Full 3-round debate with tailored agents |
+| "Red team this proposal" | Adversarial analysis with pressure-testing |
+| "Analyze this from all angles" | Multi-perspective analysis with synthesis |
+| "Devil's advocate on our auth strategy" | Structured challenge with cross-examination |
+
+Post-debate: "Go deeper", "Challenge the verdict", "Add an agent", or "Export"
+
+**Requirements:** Anthropic API key
+
+Full documentation: [plugins/multi-agent-debate/README.md](./plugins/multi-agent-debate/README.md)
+
 ---
 
 ## Installation

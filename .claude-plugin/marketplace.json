@@ -21,6 +21,12 @@
       "source": "./plugins/memory-bank",
       "description": "Living project documentation with anti-hallucination verification. Commands: init, update, system-update, add-decision.",
       "version": "1.0.0"
+    },
+    {
+      "name": "multi-agent-debate",
+      "source": "./plugins/multi-agent-debate",
+      "description": "Structured multi-agent debate with parallel LLM agents for adversarial analysis and synthesis.",
+      "version": "1.0.0"
     }
   ]
 }
