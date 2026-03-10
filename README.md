@@ -98,6 +98,29 @@ Post-debate: "Go deeper", "Challenge the verdict", "Add an agent", or "Export"
 
 Full documentation: [plugins/multi-agent-debate/README.md](./plugins/multi-agent-debate/README.md)
 
+### [ios-quick-review](./plugins/ios-quick-review)
+
+Exhaustive multi-pass iOS/Swift code review for commits or uncommitted changes.
+
+**What it does:**
+- 8-phase sequential audit: scope mapping, correctness, architecture, naming, dead code, performance, side effects, AGENTS.md compliance
+- Traces call sites across the entire codebase for every changed symbol
+- No finding caps — reports everything found with severity, location, and fix suggestions
+- Structured output with summary table, risk assessment, and top actions
+
+**Usage:**
+
+| Trigger | What happens |
+|---------|--------------|
+| "Review my code" | Full 8-phase review of uncommitted changes |
+| "Review this commit" | Review a specific commit's changes |
+| "Check my changes" | Review staged/unstaged changes |
+| "Find bugs in this" | Targeted correctness and safety analysis |
+
+**Requirements:** Swift/iOS codebase, AGENTS.md in project root
+
+Full documentation: [plugins/ios-quick-review/README.md](./plugins/ios-quick-review/README.md)
+
 ---
 
 ## Installation

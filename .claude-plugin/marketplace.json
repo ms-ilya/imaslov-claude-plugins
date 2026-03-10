@@ -27,6 +27,12 @@
       "source": "./plugins/multi-agent-debate",
       "description": "Structured multi-agent debate with parallel LLM agents for adversarial analysis and synthesis.",
       "version": "1.0.0"
+    },
+    {
+      "name": "ios-quick-review",
+      "source": "./plugins/ios-quick-review",
+      "description": "Exhaustive multi-pass iOS/Swift code review for commits or uncommitted changes.",
+      "version": "1.0.0"
     }
   ]
 }
