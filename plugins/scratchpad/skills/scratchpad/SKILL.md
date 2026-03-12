@@ -4,11 +4,12 @@ description: >-
   Context-preserving bug-fixing scratchpad that persists investigation state,
   failed approaches, architectural decisions, and knowledge across sessions via
   .md files. Use this skill whenever the user explicitly invokes /scratchpad or
-  writes something like "use scratchpad skill", "scratchpad this", or
-  "scratchpad resolve/abandon/switch". This skill NEVER activates on its own —
-  only when the user calls it. Covers creating, updating, resolving, abandoning,
-  and managing .scratchpads/ files for any debugging or investigation workflow.
-tools: Read, Write, Edit, Glob, Bash
+  writes something like "use scratchpad skill", "scratchpad this", "open
+  scratchpad", "check scratchpad", "update scratchpad", or "scratchpad
+  resolve/abandon/switch". This skill NEVER activates on its own — only when the
+  user calls it. Covers creating, updating, resolving, abandoning, and managing
+  .scratchpads/ files for any debugging or investigation workflow.
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash
 ---
 
 # Scratchpad Skill
@@ -19,14 +20,6 @@ A single, evolving `.md` file per issue that serves as a **living investigation 
 
 The scratchpad is a **directional document** — a map that leads away from known dead ends and toward working solutions. It is NOT a changelog or diff history.
 
-**Platform-agnostic** — works in both Claude.ai and Claude Code with no adaptation needed.
-
----
-
-## Trigger
-
-**Explicit invocation only.** The user says `/scratchpad`, "use scratchpad skill", "scratchpad this", etc. Never activate on your own — no background monitoring, no proactive suggestions.
-
 ---
 
 ## The Single Flow
@@ -35,34 +28,52 @@ Every `/scratchpad` call runs one automatic flow. No sub-commands. The user's me
 
 ### Step 1: LOCATE — Find or create the right scratchpad
 
-- **First call in conversation?** Scan `.scratchpads/` directory at the project root.
-  - No folder or no `.md` files → Create new (propose a name, ask user to confirm).
+Determine project root: use `git rev-parse --show-toplevel` if in a git repo, otherwise use the current working directory. All `.scratchpads/` paths are relative to this root — resolve to absolute paths for all tool calls.
+
+- **First call in conversation?** Use Glob to scan `.scratchpads/SP-*.md` at the project root.
+  - No folder or no `.md` files → Create new (propose a name, ask user to confirm). If no clear issue in conversation, ask the user to describe it first.
   - One active scratchpad → Auto-select it, confirm to user.
-  - Multiple active scratchpads → List them with status, ask user to pick (or create new).
-- **Already selected this conversation?** Use the same one (session memory). No re-scanning.
-- User says **"switch"** or names a different scratchpad → Re-run selection, clear session memory.
+  - Multiple active scratchpads → List them with status, ask user to pick (or create new). If >10 active scratchpads, show the 5 most recently modified + total count.
+- **Already selected this conversation?** Use the same one (it's in your conversation context). No re-scanning.
+- User says **"switch"** or names a different scratchpad → Re-run selection.
 
 ### Step 2: READ — Re-read from disk
 
 Always re-read the scratchpad file from disk before doing anything. Never trust in-memory content — another session may have modified it. If content changed since your last read, note: *"Scratchpad updated externally. Incorporating."*
 
-### Step 3: DIFF — Compare conversation against scratchpad
+### Step 3: DIFF — Extract new findings from conversation
 
-Scan messages since the last `/scratchpad` call in this conversation (or from the start if this is the first call). Identify what's new across these categories:
+Focus on conversation content not yet captured in the scratchpad. If this is the first call in a long conversation, focus on the most recent ~20-30 exchanges — tell the user if you suspect earlier messages contain uncaptured findings.
 
-- Failed approaches (with why-it's-wrong)
-- Edge cases / test scenarios
-- Related files (investigated / changed / root cause)
-- Architectural decisions
-- Evolved understanding of the issue
-- Error messages / symptoms
+**Dedup strategy:** Before adding any finding, check the scratchpad for matches. Use Grep on the scratchpad file for key identifiers (file paths, function names, approach descriptions). If a match exists, the finding is already recorded — skip it.
+
+**Contradictory findings:** If the conversation contains contradictions (e.g., "bug is in file A" then later "actually, it's in file B"), record only the latest understanding. If the earlier version is already in the scratchpad, update it and note: "Corrected: previously [X], now [Y]."
+
+**Extraction categories** (use this priority when a finding fits multiple — never duplicate across categories):
+
+1. Failed approaches (a specific fix was attempted and failed — with why-it's-wrong)
+2. Related files — root cause (a specific function/file identified as the source)
+3. Edge cases / test scenarios (a scenario to test or verify)
+4. Architectural decisions (a design choice was made)
+5. Evolved understanding (new insight that doesn't fit above)
+6. Error messages / symptoms (key observations, not full stack traces)
+
+**Anti-hallucination rules:**
+- Only record findings explicitly stated or demonstrated in the conversation. If you cannot point to a specific exchange where this was confirmed, do not include it.
+- Discussed-but-untested hypotheses are NOT failed approaches.
+- Files mentioned but not opened/read are NOT "investigated."
+- Never auto-populate Plan to Fix — only the user writes there.
+- When uncertain whether something qualifies, omit it. The user can add it manually.
+- No code blocks in scratchpad content. Inline references to function names and short expressions within prose are fine.
+- Only populate Root Cause when the investigation conclusively demonstrated it or the user explicitly identified it. Suspected root causes go under Evolved Understanding with a "suspected" qualifier.
+- Edge cases and test scenarios must come from the conversation — do not invent additional scenarios the user hasn't discussed.
 
 ### Step 4: WRITE — Apply changes
 
-- **New scratchpad?** Create it with populated sections from context. Read `references/template-active.md` for the structure.
-- **Existing + new findings?** Append new content. **Never modify existing failed approaches** — they are sacred during active debugging.
+- **New scratchpad?** Read `references/template-active.md` for the structure. Create with Write tool, populated from context.
+- **Existing + new findings?** Use Edit tool to append new content to appropriate sections (see Tool Strategy). Never modify existing failed approaches — they are sacred during active debugging.
 - **Existing + nothing new?** Tell user: *"Scratchpad is up to date."* Show a one-line status summary.
-- Update status if appropriate (`investigating` → `attempted` once a fix has been tried).
+- Update status per valid transitions only (see Status Workflow).
 
 ### Step 5: CONFIRM — Brief summary
 
@@ -78,47 +89,55 @@ The user controls special flows by stating intent in their message alongside `/s
 |---|---|
 | "resolve", "mark as resolved" | Run the **Resolve Flow** |
 | "abandon", "give up on this" | Run the **Abandon Flow** |
-| "switch", "different one" | Re-run selection, clear session memory |
+| "switch", "different one" | Re-run selection from Step 1 |
 | *(nothing special)* | Default flow: locate → read → diff → write → confirm |
 
 ---
 
 ## Resolve Flow
 
-Triggered when user indicates resolution (e.g., `/scratchpad resolve`).
+Triggered when user clearly intends to mark the scratchpad as done/fixed. Uses of "resolve" in other contexts (git conflicts, resolving questions, proposing a fix) do NOT trigger this flow — when ambiguous, ask.
 
-1. If edge cases are unchecked → warn the user, proceed only if they confirm.
-2. **Transform** the scratchpad — read `references/template-resolved.md` for the target structure:
+1. **Confirm with user**: "This will delete all Failed Approaches, rewrite the description as a knowledge artifact, and move the file to `resolved/`. Proceed?"
+2. If edge cases are unchecked → warn the user, proceed only if they confirm.
+3. **Transfer insights**: Before deleting Failed Approaches, extract all "Actual insight" lines. Verify each is incorporated into the resolved description or explicitly noted as no longer relevant.
+4. **Transform** the scratchpad — read `references/template-resolved.md` for the target structure:
    - Delete all "Failed Approaches"
-   - Rewrite description as a clean 3–8 sentence past-tense knowledge artifact
-   - Promote ADRs to full format (Status, Context, Decision, Consequences, Alternatives)
+   - Rename `## Issue Description` → `## Description`. Rewrite as a clean 3–8 sentence past-tense knowledge artifact. Every claim must be traceable to existing scratchpad content — do not add explanations not recorded during investigation.
+   - Populate `## Solution` from the successful fix — the approach that worked. If the working fix isn't recorded in the scratchpad (e.g., user fixed it outside the scratchpad workflow), ask the user to describe it before resolving. Do not invent solution details.
+   - Drop `### Investigated` from Related Files — only `### Changed` and `### Root Cause` are relevant post-resolution.
+   - Promote ADRs to full format — only populate Consequences and Alternatives if they were explicitly discussed. Omit sub-sections without grounding rather than inventing them.
    - Mark edge cases as confirmed/checked
-3. Move the file to `.scratchpads/resolved/` (create directory if needed).
+5. Move the file: `mkdir -p .scratchpads/resolved && mv <file> .scratchpads/resolved/`
 
 ## Abandon Flow
 
-Triggered when user indicates abandonment (e.g., `/scratchpad abandon`).
+Triggered when user clearly intends to abandon the entire scratchpad. "Abandon" refers to the whole scratchpad, not a single approach — if the user wants to abandon one approach, record it as a Failed Approach instead. When ambiguous, ask.
 
-1. Optionally ask for a reason.
-2. Set status to `abandoned`.
-3. Keep the file in `.scratchpads/` — it's still valuable as a "don't go here" warning.
+1. **Confirm with user**: "This will mark the scratchpad as abandoned. It stays in `.scratchpads/` as a warning. Proceed?"
+2. Ask for a reason (optional).
+3. Set status to `abandoned`.
+4. Keep the file in `.scratchpads/` — it's still valuable as a "don't go here" warning.
 
 ---
 
 ## Status Workflow
 
-```
-investigating → attempted → resolved
-                    ↓            ↓
-                abandoned    regressed
-                              (→ back to attempted)
-```
-
+**Statuses:**
 - **investigating**: Gathering information. No fix attempts yet.
 - **attempted**: At least one fix tried. Failed approaches being documented.
-- **resolved**: Fix confirmed. Transformed into memory bank, moved to `resolved/`.
+- **resolved**: Fix confirmed. Transformed into knowledge artifact, moved to `resolved/`.
 - **abandoned**: Dead end. Stays in `.scratchpads/` as a warning.
-- **regressed**: Was resolved, broke again. See "Targeting a resolved scratchpad" below.
+- **regressed**: Was resolved, broke again.
+
+**Valid transitions (no other transitions are allowed):**
+- `investigating` → `attempted` — when a fix is first tried
+- `investigating` → `abandoned` — via Abandon Flow (no fix was ever attempted)
+- `attempted` → `resolved` — via Resolve Flow only
+- `attempted` → `abandoned` — via Abandon Flow only
+- `resolved` → `regressed` — when re-targeting a resolved scratchpad
+- `regressed` → `attempted` — automatic on first update
+- `abandoned` → `investigating` — on revival
 
 ---
 
@@ -151,39 +170,28 @@ Every word costs tokens every time the scratchpad is loaded in future sessions.
 
 1. **Be concise.** Failed approaches: 2–4 lines each. Issue descriptions: 1–3 sentences. ADRs: 1–2 sentences. The scratchpad is a map, not a novel.
 2. **Omit empty sections.** Do NOT include section headers with no content. Add sections when they first have content.
-3. **Condense on growth.** If a scratchpad exceeds ~150 lines, condense older failed approaches to one-liners (keep approach name + what was tried + why it's wrong). Never delete — condense.
-4. **Scope the scan.** Analyze only messages since the last `/scratchpad` call. If first call, analyze from conversation start.
-5. **Re-read before writing.** Always re-read from disk. Another conversation may have modified it.
+3. **Condense on growth.** If a scratchpad exceeds 150 lines (verify with `wc -l` via Bash), condense older failed approaches to one-liners: `### Approach: [name] — Tried [X], wrong because [Y], learned [Z]`. Never delete — condense. If still >300 lines after condensation, warn the user and suggest splitting or resolving.
+4. **No timestamps.** What matters is what was tried and why it failed, not when.
 
 ---
 
+## Tool Strategy
+
+- **Glob**: Scan `.scratchpads/SP-*.md` and `.scratchpads/resolved/SP-*.md` for discovery. Use for LOCATE step.
+- **Read**: Fetch scratchpad content from disk before any write. Read templates from this skill's `references/` directory when creating or transforming. Always use absolute paths.
+- **Edit**: Preferred for updates to existing scratchpads (append findings, condense, status change). Use the last line of the target section as anchor in `old_string`, then replace with anchor + new content in `new_string`. This avoids accidentally modifying sacred failed approaches.
+- **Write**: Only for new scratchpad creation and full resolve transformation (entire content is rewritten). Before the first Write in a project, create the directory via Bash: `mkdir -p .scratchpads/`.
+- **Grep**: Search scratchpad content by keyword when needed (e.g., checking if a finding is already recorded).
+- **Bash**: File moves (`mkdir -p .scratchpads/resolved && mv <source> <target>`), line count checks (`wc -l`), project root detection (`git rev-parse --show-toplevel`). Never use Bash for grep/find — use Glob or Grep instead.
+
+If file operations fail due to permissions or missing paths, inform the user of the specific error.
+
 ## Templates
 
-The full templates live in the `references/` directory. Read them when you need to create or transform a scratchpad:
+Read templates from this skill's `references/` directory. You must call Read on the template file — do not generate the structure from memory.
 
-- **`references/template-active.md`** — Structure for active (investigating/attempted) scratchpads. Only include sections that have content.
+- **`references/template-active.md`** — Structure for active (investigating/attempted) scratchpads. Includes Failed Approach format. Only include sections that have content.
 - **`references/template-resolved.md`** — Structure for resolved scratchpads after transformation.
-
-### Failed Approach Format
-
-**Default (compact)** — use this unless the failure is too complex for one-liners:
-```markdown
-### Approach: [Short name]
-- **What was tried**: [1 sentence]
-- **What happened**: [1 sentence]
-- **Why it's wrong**: [1 sentence]
-- **Actual insight**: [1 sentence]
-```
-
-**Expanded** — only when compact would be misleading:
-```markdown
-### Approach: [Short name]
-- **What was tried**: [longer description]
-- **What happened**: [observed result]
-- **Why it's wrong**: [root explanation]
-- **Wrong hypothesis**: [what we incorrectly believed]
-- **Actual insight**: [what we learned]
-```
 
 ---
 
@@ -195,40 +203,18 @@ Create the folder. Propose a new scratchpad from conversation context. If no cle
 ### First call, multiple issues in conversation
 List the distinct issues found. Ask which one this scratchpad is for. Never pick silently.
 
+### Ambiguous debugging context
+If the conversation contains debugging context but the user's intent is unclear, ask: *"I see debugging context about [X]. Should I create a scratchpad for that, or do you have a different issue in mind?"*
+
 ### Nothing new to capture
 Tell the user: *"Scratchpad is up to date."* Show a one-line status summary.
 
 ### Targeting a resolved scratchpad
-Change status to `regressed`. Move back from `resolved/` to `.scratchpads/`. Preserve the resolved description under a new `## Previous Resolution` section. Re-add empty "Failed Approaches" and "Plan to Fix" sections. Proceed with update.
+Change status to `regressed`. Move back from `resolved/` to `.scratchpads/` via Bash `mv`. Preserve the resolved description under a new `## Previous Resolution` section. Re-add `## Failed Approaches — DO NOT RETRY` and `## Plan to Fix` headers as scaffolding (exception to the "omit empty sections" rule — these sections will imminently receive content). Proceed with update.
 
 ### Abandoned scratchpad revival
 Change status to `investigating`. Proceed normally. All existing content preserved.
 
 ### Name collision on creation
-If a similarly named scratchpad exists, flag the similarity and ask: related or distinct?
+Flag a collision if: (a) the proposed name is a substring of or contains an existing name, (b) the proposed name shares 2+ consecutive kebab-case segments with an existing name, or (c) the issue descriptions seem related. When in doubt, ask: related or distinct?
 
----
-
-## Key Design Principles
-
-1. **One command.** `/scratchpad` triggers everything. The rest is automatic.
-2. **Directional, not historical.** "Don't go there" + "try this direction."
-3. **No timestamps.** What matters is what was tried and why it failed.
-4. **No code storage.** Descriptions and reasoning only. No snippets, diffs, or patches.
-5. **Sacred failed approaches.** Never removed or modified during active debugging. Only deleted on resolve.
-6. **Clean resolve.** Transforms into a 3–8 sentence knowledge artifact. All noise stripped.
-7. **Plan to Fix is NEVER auto-filled.** Only the user populates it.
-8. **Edge cases grow.** Living checklist. Definition of "done."
-9. **Token-conscious.** Every word costs tokens on every future read. Be brief.
-10. **Omit, don't pad.** No empty section headers. Add sections when they earn content.
-
----
-
-## Inspiration & References
-
-- **obra/superpowers → systematic-debugging**: 4-phase root cause investigation
-- **compound-engineering (EveryInc)**: Each unit of work makes future work easier
-- **nikiforovall structured-note-taking**: CURRENT_SESSION.md, DECISIONS.md, ADRs patterns
-- **Anthropic context engineering**: Scratchpad files as persistent memory across sessions
-
-This skill combines all of these into a single, issue-scoped, transformation-capable debugging document.

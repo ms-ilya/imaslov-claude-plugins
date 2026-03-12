@@ -1,47 +1,127 @@
 ---
 name: ios-quick-review
 description: >-
-  Exhaustive multi-pass iOS/Swift code review for commits or uncommitted changes.
-  Use this skill whenever Ilya asks to review code, review a commit, review
-  changes, check a diff, do a code review, or asks for PR review. Triggers on
-  any mention of "review", "check my code", "check changes", "review commit",
-  "code review", "PR review", or "audit" in the context of Swift/iOS code. Also
-  use when asked to find bugs, code smells, DRY/YAGNI violations, naming issues,
-  or thread safety problems in Swift code.
-tools: Read, Grep, Glob, Bash, Agent
+  Efficient multi-pass iOS/Swift code review for commits or uncommitted changes.
+  Use this skill when the project is an iOS/Swift project (contains .swift files,
+  .xcodeproj, .xcworkspace, or Package.swift) and the user asks to review code,
+  review a commit, review changes, check a diff, do a code review, or PR review.
+  Triggers on "review", "check my code", "check changes", "review commit",
+  "code review", "PR review", "audit", "look at my diff", "check for issues",
+  or "what do you think about this code" — but ONLY for Swift/iOS codebases.
+  Also use when asked to find bugs, code smells, DRY/YAGNI violations, naming
+  issues, retain cycles, or thread safety problems in Swift code. Do NOT trigger
+  for non-Swift projects (Python, JS, Rust, etc.).
+allowed-tools: Read, Write, Grep, Glob, Bash, Agent, TodoWrite, AskUserQuestion
 ---
 
-# iOS Code Review — Exhaustive Multi-Pass Audit
+# iOS Quick Review — Efficient Multi-Pass Code Review
 
-You are a senior iOS developer with 10+ years of production Swift experience. You have shipped large-scale apps and have deep expertise in Swift concurrency, memory management, UIKit/SwiftUI architecture, and performance optimization.
+Perform an efficient, focused multi-pass code review. Every finding references exact symbols, exact files, exact lines — verified by reading the actual code. If you find 47 issues, report all 47 — incomplete reviews create false confidence.
 
-Your job: perform a ruthless, exhaustive, multi-pass code review. No summaries. No hand-waving. Every finding references exact symbols, exact files, exact lines.
+Read AGENTS.md from the project root before starting — cross-check findings against its rules. If AGENTS.md is not found, skip naming enforcement in Phase 4 and compliance checks in Phase 7 that depend on project-specific rules, and note the absence.
 
-## Critical Behavior Rules
+## Verification Rules
 
-- **DO NOT STOP EARLY.** Do not cap yourself at 10 or 20 findings. Review EVERY file, EVERY changed symbol, EVERY call site. If there are 47 issues, report 47 issues. Completeness is non-negotiable.
-- **DO NOT SUMMARIZE code.** Analyze it.
-- **DO NOT ASSUME code is correct** because it compiles or "looks fine." Trace logic paths.
-- **TRACE CALL SITES.** For every changed function, property, type, or protocol — find and review ALL usages across the entire codebase. Changes that look safe in isolation often break callers.
-- **Read AGENTS.md** from the project root before starting. All findings must be cross-checked against its rules.
+The most common failure mode in LLM code reviews is fabricating findings — reporting issues in code that wasn't actually read, inventing line numbers, or claiming to have traced call sites without actually searching. These rules exist because a single hallucinated finding destroys trust in the entire review:
+
+- Only report findings for code you have READ with the Read tool. Never report an issue based on inference or memory alone.
+- Before writing each finding, re-read the specific lines being cited to verify the issue still exists and line numbers are correct. Working memory degrades over long reviews — re-reading is cheap, hallucinated findings are expensive.
+- Include the actual code snippet (2-4 lines) from the file in each finding as proof.
+- Never guess line numbers. Read the file, find the exact line, cite it.
+- For call-site tracing (Phase 1), use Grep to find usages and Read each caller. List Grep results as evidence.
+- When uncertain, flag as a question rather than asserting as fact.
+
+## Tool Strategy
+
+Each tool has a purpose — using the right one saves time and improves accuracy:
+
+- **Glob**: Find files by pattern (`*.swift`, `*Tests.swift`, `*ViewModel.swift`). Use to discover project structure.
+- **Grep**: Find symbol usages, call sites, protocol conformances. Use `files_with_matches` mode for speed when you only need file paths. Use `content` mode with context lines when you need surrounding code.
+- **Read**: Read specific files or line ranges to verify findings. Always read before reporting. Use line offsets for large files — don't read 2000 lines when you need 50.
+- **Bash**: Git commands only — `git diff`, `git log`, `git show`, `git status`. Never use for grep/find/cat.
+- **Agent**: Parallelize call-site tracing when there are 10+ changed symbols. Use `subagent_type: "general-purpose"`. Each subagent traces one symbol's usages.
+- **Write**: For reviews with 20+ findings, write the full report to `code-review-YYYY-MM-DD.md` in the project root, in addition to conversation output.
 
 ## Execution Plan
 
-Run these phases sequentially. Do not skip any phase. After all phases, produce the final report.
+Use TodoWrite to create a checklist of applicable phases before starting. Mark each phase in_progress when starting and completed when done — this gives the reviewer visible progress.
+
+Output findings after completing each phase — don't batch everything to the end. This prevents losing findings if context fills up, and gives the reviewer incremental value.
+
+### Scope-Proportional Strategy
+
+Adjust effort to match diff size — "quick" means smart, not sloppy:
+
+- **Small diff (1-3 files, <50 lines):** Run Phase 0, brief Phase 1 (list changed symbols, skip full call-site tracing if changes are self-contained), then a single combined analysis pass covering Phases 2-7 together by reading each changed file once and checking all dimensions. This avoids re-reading the same small set of files 6 times.
+- **Medium diff (3-15 files, 50-500 lines):** Run all phases sequentially. Use Agent subagents to parallelize call-site tracing in Phase 1 if there are 10+ changed symbols.
+- **Large diff (15+ files, 500+ lines):** Split files into batches of 5-8. Use Agent subagents (`subagent_type: "general-purpose"`) per batch for Phases 2-7. Merge findings at end. Phase 1 scope mapping is critical at this scale — invest the time.
+
+If a phase produces zero findings after thorough analysis, state "Phase N: No issues found" and proceed — don't pad with filler.
 
 ---
 
-### PHASE 1: SCOPE MAPPING (mandatory first step)
+### PHASE 0: ACQUIRE CHANGES (always first)
+
+Determine what's being reviewed and get the actual diff:
+
+**For uncommitted changes:**
+```bash
+git status
+git diff HEAD
+```
+
+**For a specific commit:**
+```bash
+git show <sha> --stat
+git diff <sha>~1 <sha>
+```
+
+**For a PR:**
+```bash
+gh pr diff <number>
+```
+
+Save the list of changed files and the diff content — reference these throughout the review.
+
+**Merge commits:** If the target commit is a merge commit, `git diff <sha>~1 <sha>` diffs against the first parent only. This is typically correct, but warn the user if the diff is unexpectedly large.
+
+**Non-Swift files in diff:** For non-Swift files (`.plist`, `.json`, `.xib`, `.strings`, `.storyboard`), check only for obvious issues (malformed structure, missing keys) and move on. Focus review effort on `.swift` files.
+
+**Early exit:** If the diff is empty (no changed files, clean working tree, or invalid commit SHA), inform the user immediately and stop. Do not proceed to Phase 1.
+
+---
+
+### PHASE 1: SCOPE MAPPING
 
 Before reviewing anything, map the blast radius:
 
-1. Identify every file modified in the commit/changes.
+1. From the diff acquired in Phase 0, list every changed file.
 2. For each changed symbol (function, property, type, protocol, enum case):
-   - Find ALL call sites, ALL conformances, ALL overrides across the entire project.
-   - Note which callers might be affected by the change.
-3. List any files that were NOT changed but SHOULD have been (e.g., a function signature changed but a caller wasn't updated, a protocol got a new requirement but a conformance wasn't updated).
+   - Use Grep to find ALL call sites, conformances, and overrides across the project.
+   - Read each caller to note which might be affected.
+3. List files NOT changed but potentially SHOULD have been (e.g., a function signature changed but a caller wasn't updated).
 
-Output a dependency map before proceeding.
+**Output a dependency map like this before proceeding:**
+
+```
+Changed files: UserService.swift, UserViewModel.swift, UserProfile.swift
+
+Changed symbols and their call sites:
+  - UserService.fetchUser(id:) [signature changed]
+    → UserViewModel.swift:L23 (loadUser method)
+    → ProfileViewController.swift:L88 (viewDidLoad)
+    → UserSearchResultsController.swift:L145 (didSelectRow)
+  - UserProfile.displayName [new computed property]
+    → No existing callers (new symbol)
+  - UserProfile.fullName [deleted]
+    → ProfileHeaderView.swift:L34 (configure method) — NOT IN DIFF
+
+Potentially affected files not in diff:
+  - ProfileViewController.swift (calls fetchUser with old signature)
+  - ProfileHeaderView.swift (references deleted fullName property)
+```
+
+**Checkpoint:** Present this scope summary, then use AskUserQuestion to confirm before proceeding. Catching a wrong-scope review here saves the entire cost of Phases 2-7. Options: "Looks correct, continue review", "Wrong scope, let me clarify", "Skip to specific phase".
 
 ---
 
@@ -116,20 +196,14 @@ This is the highest-priority pass. A bug here = production crash or data corrupt
 
 ---
 
-### PHASE 4: NAMING (per AGENTS.md rules — strict enforcement)
+### PHASE 4: NAMING
 
-Check EVERY new or changed symbol name against these rules. No exceptions, no "it's close enough."
-
-| Symbol type | Rule | Example |
-|-------------|------|---------|
-| Boolean | `is`/`has`/`can`/`should` prefix | `isVisible`, `hasPermission` |
-| Function | Verb describing the action | `fetchUsers()`, `validateInput()` |
-| Type | Noun describing what it represents | `UserProfile`, `PaymentResult` |
+Check every new or changed symbol name against the naming rules in AGENTS.md. If AGENTS.md was not found, apply standard Swift API Design Guidelines instead.
 
 **Flag immediately:**
 - Abbreviated or ambiguous names: `data`, `info`, `mgr`, `mgmt`, `vc`, `vm`, `btn`, `lbl`, `img`, `val`, `tmp`, `temp`, `res`, `result`, `item`, `model`, `object`, `ctx`, `config` (when vague)
 - Vague "manager/handler/helper/utility" names that don't describe what they actually do
-- Temporal/historical names (AGENTS.md STRICTLY FORBIDS): "New", "Legacy", "Old", "Unified", "Improved", "Enhanced", "Updated", "Refactored", "V2", "Better"
+- Temporal/historical names: "New", "Legacy", "Old", "Unified", "Improved", "Enhanced", "Updated", "Refactored", "V2", "Better"
 - Inconsistent naming: same concept called different names in different places
 
 **Also check:**
@@ -146,8 +220,8 @@ Check EVERY new or changed symbol name against these rules. No exceptions, no "i
 - Code made unreachable by the changes (dead branches, impossible conditions).
 - Commented-out code — should be deleted, not commented.
 - Stale `TODO` / `FIXME` / `HACK` markers — addressed or new?
-- `ABOUTME` comment present and accurate at top of every changed file (per AGENTS.md)?
-- Comments that explain "how it's better than before" or contain temporal context like "refactored", "moved", "new approach" (AGENTS.md violation).
+- If AGENTS.md requires `ABOUTME` comments: check presence and accuracy at top of every changed file.
+- If AGENTS.md prohibits temporal comments: flag comments that explain "how it's better than before" or contain "refactored", "moved", "new approach".
 - Print/debug statements left in production code.
 
 ---
@@ -165,27 +239,22 @@ Check EVERY new or changed symbol name against these rules. No exceptions, no "i
 
 ---
 
-### PHASE 7: SIDE EFFECTS AUDIT
+### PHASE 7: SIDE EFFECTS & COMPLIANCE
 
+This phase combines side effects audit with AGENTS.md compliance — both concern "hidden behavior" that isn't obvious from the code surface.
+
+**Side effects:**
 - Functions with hidden side effects not obvious from their name or signature (e.g., a `validate()` that also mutates state).
 - Pure computations mixed with mutations in the same function.
 - Computed properties or getters that trigger side effects (network calls, state changes, analytics events).
 - Order-dependent operations that would break silently if call order changes.
 - Initializers that perform work beyond simple assignment (network calls, subscriptions, file I/O).
 
----
-
-### PHASE 8: AGENTS.md COMPLIANCE
-
-Cross-check ALL changes against AGENTS.md rules:
-
+**AGENTS.md compliance** (skip if AGENTS.md was not found):
 - Are changes the SMALLEST reasonable for the desired outcome?
 - Does code style MATCH the surrounding file (consistency within file > external standards)?
 - Were any implementations REWRITTEN without explicit permission? (Flag immediately.)
-- Was backward compatibility added without Ilya's approval? (Flag immediately.)
-- Comments: only WHAT/WHY, never "how it's better than before"?
-- No temporal context in comments ("refactored", "moved", "new", "improved")?
-- Errors fail fast with clear messages?
+- Was backward compatibility added without approval? (Flag immediately.)
 - Root cause fixes, not symptom patches or workarounds?
 - Code written in the appropriate extension/MARK group, not dumped at file bottom?
 
@@ -193,25 +262,37 @@ Cross-check ALL changes against AGENTS.md rules:
 
 ## Output Format
 
-For EVERY finding, use this exact format:
+For CRITICAL and MAJOR findings, use the full format:
 
 ```
-[🔴 CRITICAL | 🟠 MAJOR | 🟡 MINOR | 🔵 NIT]
-📍 File.swift:L42 — symbolName
-🏷️ Phase 2: Thread Safety
-💬 `sharedCounter` is mutated from both `processQueue` and Main thread without synchronization. Race condition will cause intermittent crashes.
-✅ Fix: Wrap access in an actor, or use `OSAllocatedUnfairLock`:
+[CRITICAL] File.swift:L42 — `symbolName`
+Phase 2: Thread Safety
+Code:
+    ```swift
+    // Lines 42-44
+    sharedCounter += 1  // unsynchronized write
+    ```
+Issue: `sharedCounter` is mutated from both `processQueue` and Main thread without synchronization. Race condition will cause intermittent crashes.
+Fix:
     ```swift
     private let lock = OSAllocatedUnfairLock(initialState: 0)
     func increment() { lock.withLock { $0 += 1 } }
     ```
 ```
 
-Severity guide:
-- 🔴 **CRITICAL**: Will crash, corrupt data, or cause security issues in production.
-- 🟠 **MAJOR**: Incorrect behavior, memory leak, race condition, significant design violation.
-- 🟡 **MINOR**: Code smell, DRY violation, suboptimal naming, minor AGENTS.md violation.
-- 🔵 **NIT**: Style, formatting, trivial improvement.
+For MINOR and NIT findings, use compact format to reduce output noise:
+
+```
+[MINOR] File.swift:L42 · Phase 4 — `userData` is vague. Rename to `userProfileResponse` to clarify it's the API response, not the domain model.
+
+[NIT] File.swift:L88 · Phase 5 — Unused import `Foundation` (already imported transitively).
+```
+
+**Severity decision guide** — when unsure, ask "What happens if this ships to production unchanged?"
+- **[CRITICAL]**: Crash, data loss, or security vulnerability. Must fix before merge.
+- **[MAJOR]**: Incorrect behavior users will notice, memory leak, race condition. Should fix before merge.
+- **[MINOR]**: Maintainability degrades — code smell, naming issue, DRY violation. Fix when convenient.
+- **[NIT]**: Only aesthetics affected. Fix if touching the file anyway.
 
 ---
 
@@ -222,10 +303,10 @@ After all phases, end with:
 ### Summary Table
 | Severity | Count |
 |----------|-------|
-| 🔴 CRITICAL | N |
-| 🟠 MAJOR | N |
-| 🟡 MINOR | N |
-| 🔵 NIT | N |
+| CRITICAL | N |
+| MAJOR | N |
+| MINOR | N |
+| NIT | N |
 
 ### Risk Assessment
 What is most likely to cause a production incident? Rank the top 3 riskiest findings.
@@ -235,13 +316,3 @@ The most impactful fixes to make first, ordered by risk x effort.
 
 ### Missed Call Sites
 List any callers of changed code that may need updates but weren't part of this diff.
-
----
-
-## Reminders
-
-- You MUST complete ALL 8 phases. Do not skip, abbreviate, or merge phases.
-- You MUST trace call sites (Phase 1) before reviewing code.
-- You MUST NOT stop at an arbitrary number of findings. Report everything you find.
-- If the review is large, break it into multiple messages rather than truncating.
-- When uncertain, flag it as a question for Ilya rather than assuming it's fine.

@@ -2,40 +2,77 @@
 name: init-memory-bank
 description: >-
   Initialize a new Memory Bank for the current project. Scans the codebase and
-  creates root-level documentation files.
-tools: Read, Write, Edit, Glob, Bash
+  creates root-level documentation files (WIKI.md, systemPatterns.md, techContext.md,
+  TROUBLESHOOTING.md). Use this skill when the user says "create memory-bank",
+  "initialize memory-bank", "init memory-bank", "set up memory bank", or
+  "start memory bank". This is a one-time setup — after initialization, use
+  /update-memory-bank to document individual features.
+allowed-tools: Read, Write, Edit, Glob, Grep
 ---
 
 # Initialize Memory Bank
 
-You are creating a brand new Memory Bank for this project — a living documentation system that captures the current state of the codebase, organized by feature.
+You are creating a new Memory Bank for this project — a living documentation system that captures current codebase state, organized by feature.
 
-## Read the skill first
+---
 
-Before doing anything, read the Memory Bank skill documentation:
+## Pre-Flight
 
-1. Read `../memory-bank/SKILL.md` for the full workflow details
-2. Read `../memory-bank/references/templates.md` for exact file formats
-3. Read `../memory-bank/references/verification.md` for the mandatory verification procedure
+1. Find the project root (look for `.git/`, `Package.swift`, `package.json`, `Cargo.toml`, etc.)
+2. If `memory-bank/` already exists → inform the user and ask if they want to reinitialize (overwrites root files) or just update with `/update-memory-bank-system`
+3. Detect project language by checking for config files at the root (use `Glob`):
+   Swift (`Package.swift`, `*.xcodeproj`) · TypeScript (`tsconfig.json`) · Python (`pyproject.toml`, `setup.py`) · Rust (`Cargo.toml`) · Go (`go.mod`) · Kotlin (`build.gradle.kts`) · Java (`pom.xml`, `build.gradle`)
+   Use the detected language's file extensions for all subsequent searches. If a language-specific reference exists (e.g., `../memory-bank/references/swift-intelligence.md` for Swift/iOS), read it
 
-## Action
+Note: Read templates from `../memory-bank/references/templates.md` just before writing each file — only the section you need, not the whole file.
 
-Run **Workflow 2: Initialize** from SKILL.md.
+## Step 1 — Scan the Project
 
-This will:
-1. Scan the full project for tech stack, architecture, dependencies
-2. Create `memory-bank/` at the project root
-3. Generate root-level files: `WIKI.md`, `systemPatterns.md`, `techContext.md`, `TROUBLESHOOTING.md`
-4. Run the verification pass on all generated files
+Analyze the project for:
+- **Tech stack:** Language(s), framework(s), minimum deployment targets
+- **Architecture:** Module/target structure, design patterns in use
+- **Dependencies:** Package manager, third-party libraries and versions
+- **Build setup:** Schemes, configurations, build phases, CI/CD
+- **Project structure:** Top-level directory layout
 
-## After initialization
+Use `Glob` to find project files and `Grep` to identify patterns. Read key config files (`Package.swift`, `package.json`, `Cargo.toml`, `build.gradle`, etc.)
 
-Let the user know the Memory Bank is ready and they can start documenting features with:
+## Step 2 — Create memory-bank/ Directory
+
+Create `memory-bank/` at the project root.
+
+## Step 3 — Write Root-Level Files (One at a Time)
+
+For each file below, read its template section from `../memory-bank/references/templates.md` (only that section), write the file, then verify immediately before writing the next:
+
+1. **WIKI.md** — project overview + empty features table + "How to use" section
+2. **systemPatterns.md** — architecture, patterns, conventions discovered
+3. **techContext.md** — stack, dependencies, build setup, tooling
+4. **TROUBLESHOOTING.md** — any project-wide issues found (or minimal template)
+
+## Step 4 — Verify Each File (MANDATORY)
+
+Read `../memory-bank/references/verification.md` for the procedure. After writing each file:
+
+1. Verify every file path using `Glob`
+2. Verify every type/module name using `Grep`
+3. Flag unverifiable content with `⚠️ INFERRED` or remove it
+
+**Output a verification summary** after each file:
+```
+Verified: systemPatterns.md
+- Paths: N checked, N verified, N flagged
+- Types: N checked, N verified, N flagged
+```
+
+## Step 5 — Inform the User
+
+Tell the user the Memory Bank is ready. Suggest next steps:
 - `/update-memory-bank <feature-name>` to document individual features
 - `/update-memory-bank-system` to refresh root-level docs later
 
-## Key reminders
+## Key Rules
 
-- If `memory-bank/` already exists, inform the user and ask if they want to reinitialize (which will overwrite root files) or just update with `/update-memory-bank-system`
-- Every file path and type name must be verified against actual source code
-- This is about **current state**, not history
+- **Current state only** — no changelogs or history
+- **Every path and type must be verified** against actual source code
+- **Use Grep/Glob tools** for all searches, not bash grep/find

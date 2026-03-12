@@ -52,13 +52,3 @@ Readable months later without debugging context.]
 - `SP-other-issue.md` — connection
 ```
 
-## Regressed Scratchpad
-
-If a resolved scratchpad is targeted again (the issue came back):
-
-1. Change status to `regressed`
-2. Move file back from `resolved/` to `.scratchpads/`
-3. Preserve the resolved description under a new `## Previous Resolution` section
-4. Re-add empty `## Failed Approaches — DO NOT RETRY` section
-5. Re-add empty `## Plan to Fix` section
-6. Proceed with the normal update flow

@@ -2,49 +2,101 @@
 
 ## The Problem
 
-A single model reasoning through "perspectives" produces polite, convergent viewpoints that echo each other. Asking one LLM to "consider both sides" is theater — it shares context across all perspectives, so genuine disagreement is structurally impossible.
+When you ask one AI to "consider both sides", it tends to agree with itself. All the "perspectives" share the same context, so they end up saying the same thing in different words. You never get real disagreement — just the illusion of it.
 
 ## The Solution
 
-Spawn **independent parallel API calls** — each agent gets its own system prompt, its own framing, and its own biases. They never see each other's system prompts. The result is genuine disagreement, not theater.
+Launch **separate AI agents** that each get their own instructions, their own point of view, and their own biases. They can't see each other's instructions, so they actually disagree for real.
 
-**Core idea: adversarial collaboration.** Agents are set up to genuinely disagree, cross-examine each other's weakest points, and make honest concessions. An impartial Judge synthesizes the strongest reasoning into a verdict.
+**Core idea: productive conflict.** Agents are set up to challenge each other, attack weak points, and admit when the other side is right. A neutral Judge then picks the best reasoning and delivers a final verdict.
 
-## How It Works
+## What It Does
 
-The debate runs through structured rounds, each dispatched as parallel API calls:
+The debate runs through structured rounds, each dispatched as parallel Agent tool calls:
 
 ```
-Round 1: Opening Positions  →  Each agent frames the problem and states their thesis
-Round 2: Cross-Examination  →  Each agent attacks every other agent's weakest claims
-Round 3: Rebuttals           →  Each agent concedes valid points and defends with new reasoning
-Judgment                     →  Claude synthesizes a verdict with confidence level and dissent log
+Step 0: Parse & Frame       →  Identify the issue, narrow if too broad, choose debate depth
+Step 1: Agent Assembly      →  Select 3-5 agents tailored to the specific issue
+Step 2: Build & Dispatch    →  Construct system prompts, spawn parallel Agent subagents
+Step 3: Round Execution     →  Opening → Cross-Examination → Rebuttals (3 rounds or 2 for quick)
+Step 4: Final Judgment      →  Claude steps into Judge role, synthesizes verdict
+Step 5: Post-Debate Options →  Go deeper, challenge, add agent, or export
 ```
 
 ### Agent Design
 
-Each debate gets **3–5 custom agents** tailored to the specific issue — no generic "Optimist/Pessimist" panels. Every agent has:
+Each debate gets **2-6 custom agents** (typically 3-5) chosen specifically for the topic — no generic "Optimist/Pessimist" panels. Agents are built using a **hybrid system**: 10 built-in thinking styles give agents deeper personalities (how they think, how they argue, what they tend to miss), while fully custom agents can be created from scratch when no built-in style fits.
 
-- **Name & Role** — Domain-specific identity
-- **Lens** — What they optimize for
-- **Core assumption** — The belief driving their position
+Every agent has:
+
+- **Name & Role** — Domain-specific identity (e.g., "The Pragmatist — Senior Engineering Lead")
+- **Lens** — What they optimize for (e.g., delivery speed, team morale, debt reduction)
+- **Core assumption** — The foundational belief driving their position
 - **Blind spot** — What they undervalue (stated honestly for better cross-examination)
+- **Archetype** — *(Optional)* A built-in thinking style that shapes how the agent reasons and argues. Agents without a matching style are created from scratch.
 
-### Judge Output
+The agent panel is presented to you for review before the debate starts — you can swap agents or adjust.
+
+### Thinking Styles
+
+Ten built-in thinking styles give agents distinct personalities and reasoning patterns:
+
+| Archetype | Core Belief | Best For |
+|-----------|-------------|----------|
+| Evidence Absolutist | Can't prove it with data? It doesn't count. | Technical tradeoffs, quality |
+| Narrative Architect | Can't persuade? Your argument loses. | Strategy, buy-in |
+| Systems Paranoid | Assume it's already compromised. | Security, high-stakes |
+| User Empath | What do real people actually need? | Product, DX |
+| Process Engineer | Find the bottleneck, fix it, measure it. | Operations, scaling |
+| Experiment Scientist | Don't decide — test. | Prioritization, growth |
+| Foundation Builder | Get the architecture right first. | Platform, tech debt |
+| Adoption Realist | Nobody uses it? It's worthless. | Adoption, migration |
+| Bias Archaeologist | Who is excluded by the defaults? | Inclusion, global audiences |
+| Choice Architect | People follow defaults, not reason. | Behavioral design, onboarding |
+
+Thinking styles add depth but never replace custom agents. The system only assigns a style when it genuinely fits the topic, and never uses the same style twice in one debate.
+
+### Debate Rounds
+
+**Round 1 — Opening Positions:** Each agent independently describes the problem, states a clear position that can be proven wrong, and presents their strongest argument.
+
+**Round 2 — Cross-Examination:** Each agent receives all other agents' opening positions and must attack each opponent's weakest claim, find edge cases, and expose hidden costs. "I generally agree but..." is banned.
+
+**Round 3 — Rebuttals:** Each agent receives ONLY the critiques directed at them (not all cross-examination). Must concede valid points honestly or explain specifically why critiques don't land, then defend with NEW reasoning.
+
+**Quick analysis mode** (2 rounds) is available for simpler tradeoff questions — skips the rebuttal round.
+
+### Judge Verdict
 
 The final verdict includes:
 
-- **Synthesis** — Points of convergence and genuine unresolved tensions
-- **Verdict** — Clear recommendation with confidence level and key conditions
-- **Dissent Log** — Minority positions worth preserving, flip conditions, open questions
+- **Synthesis** — Where agents agreed and where they genuinely disagreed
+- **Verdict** — Clear recommendation with confidence level (High/Moderate/Low) and conditions that must hold true
+- **Dissent Log** — Minority opinions worth keeping, conditions that would change the verdict, and questions that need more data
 
-## Installation
+### Post-Debate Options
 
-Add to Claude Code plugins.
+After the verdict, you can:
 
-## Usage
+1. **"Go deeper"** — Spawn agents again on unresolved tensions from the Dissent Log
+2. **"Challenge the verdict"** — Introduce a new constraint; all agents respond in a mini-round
+3. **"Add an agent"** — Define a new perspective; existing agents cross-examine the newcomer
+4. **"Export"** — Write a clean summary to `debate-[topic-slug].md` via the Write tool
 
-Trigger naturally — no slash command needed:
+## Skills & Agents
+
+This plugin provides:
+
+| Component | Name | Purpose |
+|-----------|------|---------|
+| **Skill** | `/multi-agent-debate` | Orchestrator workflow — assembles panels, dispatches rounds, synthesizes verdicts |
+| **Agent** | `debate-agent` | Debate participant subagent — tool-restricted (`maxTurns: 1`, no Read/Write/Bash) for text-only arguments |
+
+Trigger with: `/multi-agent-debate <issue or decision to debate>`
+
+Also triggers automatically on: "debate", "red team", "devil's advocate", "analyze from all angles", "stress-test", "argue both sides", "what am I missing", "challenge my thinking", "poke holes in this"
+
+### Examples
 
 | You say... | What happens |
 |-----------|--------------|
@@ -53,44 +105,64 @@ Trigger naturally — no slash command needed:
 | "Analyze this from all angles" | Multi-perspective analysis with synthesis |
 | "Devil's advocate on our auth strategy" | Structured challenge with cross-examination |
 | "Stress-test this idea" | Edge cases and hidden costs surfaced |
+| "Quick take on Python vs Rust for this" | 2-round quick analysis mode |
 
-### Post-Debate Options
+## Claude Code Tools Used
 
-After the verdict, you can:
+| Tool | Purpose |
+|------|---------|
+| **Agent** | Spawn independent parallel `debate-agent` subagents for each debate participant — genuine parallelism with separate context |
+| **Read** | Read attached files, reference documents, and skill reference files |
+| **Write** | Export debate transcript to a markdown file |
 
-1. **"Go deeper"** — Additional round on unresolved tensions
-2. **"Challenge the verdict"** — Introduce a new constraint; agents respond
-3. **"Add an agent"** — Bring in a missing perspective
-4. **"Export"** — Generate a clean summary document
+Debate agents can only produce text (no file access, no commands) — this is enforced at the system level. Only the main orchestrator (Claude) uses tools.
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
-│              ORCHESTRATOR (Claude)           │
+│         ORCHESTRATOR (Claude / Skill)       │
 │                                             │
-│  1. Build system prompts per agent          │
-│  2. Dispatch parallel API calls             │
+│  1. Build persona prompts per agent         │
+│  2. Dispatch parallel debate-agent calls    │
 │  3. Collect & route responses               │
-│  4. Feed cross-agent context for rebuttals  │
-│  5. Step into Judge role for final verdict  │
+│  4. Check divergence, restructure if needed │
+│  5. Feed cross-agent context for rebuttals  │
+│  6. Step into Judge role for final verdict  │
 └──────────┬──────────┬──────────┬────────────┘
            │          │          │
      ┌─────▼──┐ ┌─────▼──┐ ┌────▼───┐
-     │Agent   │ │Agent   │ │Agent   │  ... (parallel)
-     │  Own   │ │  Own   │ │  Own   │
-     │ system │ │ system │ │ system │
-     │ prompt │ │ prompt │ │ prompt │
+     │Agent A │ │Agent B │ │Agent C │  ... (parallel)
+     │debate- │ │debate- │ │debate- │
+     │agent   │ │agent   │ │agent   │
+     │no tools│ │no tools│ │no tools│
+     │maxT: 1 │ │maxT: 1 │ │maxT: 1 │
      └────────┘ └────────┘ └────────┘
 ```
 
+### How Thinking Styles Work
+
+The system reads `references/archetypes.md` once when building agents. Agents that get a thinking style receive two extra instructions — how to think and how to argue — that make their reasoning genuinely different from other agents. Agents without a matching style use a fully custom profile instead. Both types participate in the debate the same way.
+
+## Quality Guardrails
+
+- **Agreement detection** — After Round 1, if 2+ agents reach the same conclusion, the panel is reshuffled and the agreeing agent re-runs Round 1 (max 1 retry)
+- **No made-up facts** — Agents must never invent examples, company names, or statistics; guesses must be clearly labeled
+- **Judge must quote directly** — The Judge must use exact quotes from agents, not summaries from memory
+- **No early agreement** — If all agents agree too soon, the Judge flags it
+- **Style clash check** — After building the panel, the system checks that at least two agents have thinking styles that naturally oppose each other
+- **Fallback** — If the Agent tool is unavailable, runs a simpler version (one model, one at a time) and tells you about the limitation
+
 ## Requirements
 
-- Anthropic API key (for spawning parallel agent calls)
+- Claude Code with the Agent tool available (for spawning parallel subagents)
+- No API keys, external services, or dependencies needed — uses Claude Code's built-in Agent tool
 
 ## Design
 
-- Agents are truly independent — separate API calls, no shared context until cross-examination
-- Minimum 3 agents per debate to prevent binary framing
-- Fallback to inline simulation if API calls fail
-- Token-conscious: 150–250 words per agent per round
+- Agents are truly independent — separate `debate-agent` subagents with no tools, `maxTurns: 1`, no shared context until cross-examination
+- Minimum 3 agents per debate to avoid simple "for vs against" framing
+- Full debate (3 rounds) or quick analysis (2 rounds) mode
+- Organized cross-examination: each agent gets a dedicated section per opponent for clean responses
+- Keeps responses short: 200-350 words per agent per round
+- Handles tricky cases: yes/no questions, topics that are too broad, already-settled facts, personal decisions

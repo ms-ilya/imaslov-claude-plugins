@@ -1,36 +1,61 @@
 ---
 name: update-memory-bank-system
 description: >-
-  Refresh Memory Bank root-level documentation (systemPatterns, techContext,
-  WIKI index, troubleshooting). Does not touch individual feature docs.
-tools: Read, Write, Edit, Glob, Bash
+  Refresh Memory Bank root-level documentation (systemPatterns.md, techContext.md,
+  WIKI.md index, TROUBLESHOOTING.md). Does not touch individual feature docs.
+  Use this skill when the user says "refresh system docs", "update memory-bank system",
+  "update root docs", "refresh memory-bank", or "rebuild wiki index".
+allowed-tools: Read, Write, Edit, Glob, Grep
 ---
 
 # Update Memory Bank System Docs
 
 You are refreshing the project-wide Memory Bank documentation — the root-level files that describe architecture, tech stack, and the feature index.
 
-## Read the skill first
+---
 
-Before doing anything, read the Memory Bank skill documentation:
+## Pre-Flight
 
-1. Read `../memory-bank/SKILL.md` for the full workflow details
-2. Read `../memory-bank/references/templates.md` for exact file formats
-3. Read `../memory-bank/references/verification.md` for the mandatory verification procedure
+1. Find the project root
+2. If `memory-bank/` doesn't exist → tell the user to run `/init-memory-bank` first
+3. Detect project language by checking for config files at the root (use `Glob`):
+   Swift (`Package.swift`, `*.xcodeproj`) · TypeScript (`tsconfig.json`) · Python (`pyproject.toml`, `setup.py`) · Rust (`Cargo.toml`) · Go (`go.mod`) · Kotlin (`build.gradle.kts`) · Java (`pom.xml`, `build.gradle`)
+   Use the detected language's file extensions for all subsequent searches. If a language-specific reference exists (e.g., `../memory-bank/references/swift-intelligence.md` for Swift/iOS), read it
 
-## Action
+Note: Read templates from `../memory-bank/references/templates.md` just before writing each file — only the section you need, not the whole file.
 
-Run **Workflow 3: System Update** from SKILL.md.
+## Step 1 — Re-Analyze Project
 
-This will:
-1. Re-analyze project-wide: architecture, dependencies, patterns, build setup
-2. Update `systemPatterns.md` and `techContext.md`
-3. Re-scan all feature folders and rebuild the `WIKI.md` feature index
-4. Update root `TROUBLESHOOTING.md` with refreshed links and cross-cutting issues
-5. Run the verification pass
+Scan the project for current state:
+- Architecture, design patterns, module structure
+- Dependencies and versions (read package manifest files)
+- Build setup, CI/CD configuration
+- Any new cross-cutting patterns since last update
 
-## Key reminders
+Use `Glob` and `Grep` tools for all discovery.
 
-- If `memory-bank/` doesn't exist, run Initialize first
-- This does NOT update individual feature documentation — use `/update-memory-bank <feature>` for that
-- Every file path and type name must be verified against actual source code
+## Step 2 — Update Root Files (One at a Time)
+
+Update each file, then verify immediately:
+
+1. **systemPatterns.md** — update architecture, patterns, conventions
+2. **techContext.md** — update stack, deps, build setup
+3. **WIKI.md** — re-scan all feature folders in `memory-bank/` and rebuild the feature index table
+4. **TROUBLESHOOTING.md** (root) — refresh feature links, add new cross-cutting issues
+
+## Step 3 — Verify Each File (MANDATORY)
+
+Read `../memory-bank/references/verification.md` for the procedure. After each file:
+
+1. Verify every file path using `Glob`
+2. Verify every type/module name using `Grep`
+3. Flag unverifiable content or remove it
+
+**Output a verification summary** after each file.
+
+## Key Rules
+
+- This does NOT update individual feature docs — use `/update-memory-bank <feature>` for that
+- **Current state only** — no changelogs
+- **Every path and type must be verified**
+- **Use Grep/Glob tools** for all searches

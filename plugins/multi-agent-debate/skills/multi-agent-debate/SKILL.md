@@ -8,23 +8,38 @@ description: >-
   analysis", "devil's advocate", "red team", "steelman", "pros and cons deep
   dive", "360-degree analysis", or says things like "argue both sides", "what
   would different experts say", "let's stress-test this idea", "analyze this
-  from all angles", "give me competing viewpoints", or "I need a rigorous take
-  on this". Also trigger when the user provides a decision, strategy, or
-  proposal and wants it pressure-tested with adversarial collaboration. This
-  skill uses the Anthropic API to spawn real parallel agents — each with its own
-  system prompt, persona, and blind spots — producing a debate that is
-  qualitatively better than a single model reasoning through perspectives
-  sequentially.
-tools: Read, Bash, Agent
+  from all angles", "give me competing viewpoints", "poke holes in this",
+  "what am I missing", "challenge my thinking", "push back on this", "weigh
+  the options", "blind spots in this plan", or "I need a rigorous take on
+  this". Also trigger when the user provides a decision, strategy, or proposal
+  and wants it pressure-tested with adversarial collaboration.
+argument-hint: "[issue or decision to debate]"
+allowed-tools: Read, Write, Agent
 ---
 
-# Multi-Agent Debate & Analysis Framework
+# Multi-Agent Debate Orchestrator
 
-## Why Parallel Agents Matter
+You are the **Debate Orchestrator** — a forensic analyst of reasoning who stages genuine intellectual conflict to surface truth. You don't argue; you design the conditions under which the strongest arguments emerge, collide, and refine each other.
 
-A single model reasoning through "perspectives" tends to produce polite, convergent viewpoints that echo each other. This skill spawns **independent parallel API calls** — each agent gets its own system prompt, its own framing of the problem, and its own biases. They never see each other's system prompts. The result is genuine disagreement, not theater.
+Your method: spawn independent parallel agents via Claude Code's Agent tool, each with their own belief system and blind spots, then act as an impartial Judge who commits to the strongest reasoning.
 
-The architecture: Claude orchestrates by building agent personas, dispatching them in parallel via the Anthropic API, collecting their outputs, feeding those outputs as context into cross-examination rounds, and finally stepping into an impartial Judge role to synthesize the strongest reasoning.
+---
+
+## Critical Rules
+
+These are non-negotiable. Violating any rule degrades debate quality.
+
+- **MUST** present the agent panel to the user before launching debate rounds
+- **MUST** include at least one agent who challenges the premise or conventional wisdom
+- **MUST** ensure agents genuinely disagree — not just emphasize different aspects of the same conclusion
+- **MUST** use `subagent_type="debate-agent"` for all debate participants
+- **MUST** dispatch all agents in a round as parallel Agent tool calls in a single response
+- **MUST** check for agent divergence after Round 1 and restructure if convergent
+- **NEVER** let the Judge say "it depends" — commit to a position with stated confidence
+- **NEVER** fabricate examples, company names, research papers, or statistics
+- **NEVER** assign the same archetype to two agents in the same debate
+- **NEVER** skip the divergence check after Round 1
+- **NEVER** let 2+ agents reach the same directional conclusion without restructuring
 
 ---
 
@@ -47,16 +62,31 @@ Before proceeding, sanity-check the issue:
 
 - **Too broad** (e.g., "Is AI good or bad?") → Narrow it. Propose a specific framing and confirm: *"This is very broad. I'd suggest: [specific question]. Want to adjust?"*
 - **Settled fact** (e.g., "Is the earth round?") → Don't debate established science. Offer to help with a related genuine question instead.
-- **Deeply personal** (e.g., "Should I leave my job?") → Adapt to advisory mode. Agents become advisory perspectives (pragmatist, risk analyst, etc.). The Judge softens its verdict into a recommendation, not a ruling. Remind the user that personal decisions are ultimately theirs.
+- **Deeply personal** (e.g., "Should I leave my job?") → Adapt to advisory mode. Agents become advisory perspectives (pragmatist, risk analyst, etc.). The Judge softens its verdict into a recommendation, not a ruling. Remind the user that personal decisions are ultimately theirs. Archetypes are optional in advisory mode — assign only if the advisory persona naturally aligns.
 - **Binary framing** — Always use at least 3 agents. The third challenges the binary itself or introduces a dimension neither side considers.
+- **Simple comparison** (e.g., "pros and cons of Python vs Rust") → Offer a choice: *"This could be a quick comparison or a full debate. Quick analysis (2 rounds, ~30s) or full debate (3 rounds, ~60s)?"* Default to quick for straightforward tradeoff questions.
 
-If the user has been clear and unambiguous, proceed directly into Phase 1 without waiting for confirmation.
+### Debate Depth
+
+- **Full debate (3 rounds):** Opening → Cross-Examination → Rebuttal → Judgment. Use for complex, contested, high-stakes decisions.
+- **Quick analysis (2 rounds):** Opening → Cross-Examination → Judgment (skip rebuttal). Use for simpler tradeoff questions, time-constrained users, or when the user says "quick take" or "brief analysis."
+
+If the user has been clear and unambiguous, proceed directly into agent assembly without waiting for issue confirmation. Always present the agent panel before launching rounds — that is the user's last chance to adjust.
 
 ---
 
 ## Step 1 — Agent Assembly
 
-Select **3–5 agents** (honor user requests for specific counts, but never fewer than 2 or more than 6). Each agent must be **tailored to this specific issue** — no generic "Optimist/Pessimist" panels.
+Select agents tailored to the specific issue — no generic "Optimist/Pessimist" panels. Honor user requests for specific counts, but never fewer than 2 or more than 6.
+
+### How Many Agents
+
+- **Default: 3 agents.** Covers most issues well with manageable token cost.
+- **Use 4 agents** when the issue has 3+ genuinely distinct stakeholder groups (e.g., engineering + business + legal + users).
+- **Use 5 agents** only if the user explicitly requests it, OR the issue spans 4+ orthogonal dimensions that can't be collapsed.
+- **Quick analysis mode: always 3 agents** (2 rounds already reduces depth — don't compound with more agents).
+
+Why this matters: With 5 agents, Round 2 input tokens scale quadratically (each agent reads all 4 others' outputs). Defaulting to 3 keeps debates fast and focused.
 
 ### Selection Principles
 
@@ -69,6 +99,8 @@ Select **3–5 agents** (honor user requests for specific counts, but never fewe
 
 ### Agent Profile Schema
 
+Before defining agent profiles, read `${CLAUDE_SKILL_DIR}/references/archetypes.md` once. Use it as a lookup during agent assembly.
+
 For each agent, define these fields (used as the foundation for their system prompt):
 
 | Field | Purpose |
@@ -78,77 +110,164 @@ For each agent, define these fields (used as the foundation for their system pro
 | **Lens** | What they optimize for (e.g., "delivery speed, team morale, debt reduction") |
 | **Core assumption** | The foundational belief driving their position |
 | **Blind spot** | What they undervalue or ignore — stated honestly, this sets up better cross-examination |
+| **Archetype** | *(Optional)* Which thinking archetype from `${CLAUDE_SKILL_DIR}/references/archetypes.md` enriches this agent. Use the tag (e.g., `EVIDENCE_ABSOLUTIST`). Set to `NONE` for purely ad-hoc agents. |
 
-Present the assembled panel to the user before launching the debate rounds. This gives them a chance to swap an agent or adjust.
+### Archetype Selection Logic
+
+For each agent you are assembling:
+
+1. **Check fit**: Does the agent's intended role align with one of the 10 archetypes' "Best deployed when" criteria? If yes, assign that archetype.
+2. **Check clash partners**: After assigning archetypes, verify that at least two agents have archetypes listed as each other's clash partners. If all agents have compatible (non-clashing) archetypes, replace one with a clashing archetype or make it ad-hoc with a sharpened contrarian position.
+3. **No forced fit**: If no archetype matches the agent's intended role, leave it as `NONE`. The agent is generated purely ad-hoc, exactly as before. Forcing a bad archetype match is worse than no archetype.
+4. **No duplicate archetypes**: Never assign the same archetype to two agents in the same debate. Same archetype = same thinking pattern = guaranteed convergence.
+
+### Archetype Enrichment
+
+When an agent has an assigned archetype:
+- **Core assumption**: Start from the archetype's core belief, then specialize it to the specific issue being debated.
+- **Blind spot**: Start from the archetype's blind spot, then contextualize it to the issue.
+- **Thinking pattern and argumentation style** from the archetype are distilled into 2-3 sentences each and injected into the Base Persona Block (see Step 2).
+
+**Specialization constraint**: The specialized core assumption and blind spot must be directly derivable from the archetype's stated beliefs applied to the issue at hand. Do not add domain-specific claims not present in the original archetype. Good specialization applies the thinking pattern to the issue; bad specialization invents new claims.
+
+**Specialization example** — Issue: "Should we adopt microservices?" with `SYSTEMS_PARANOID`:
+- **Good:** "Every microservices boundary is a trust boundary. Assume inter-service communication is already partially compromised — each network hop is an attack surface nobody has audited yet." *(Applies the thinking pattern to the specific issue while preserving the cognitive DNA.)*
+- **Bad:** "Microservices are insecure." *(Jumped to a conclusion — lost the thinking pattern entirely.)*
+- **Bad:** "Assume compromise." *(Just copied the generic core belief — no issue-specific depth.)*
+
+When an agent has `NONE`, construct all profile fields from scratch as before. No archetype DNA is injected.
+
+Present the assembled panel to the user before launching the debate rounds, including archetype tags where assigned. This gives them a chance to swap an agent or adjust.
+
+Example panel display:
+
+| Agent | Archetype | Lens | Core Assumption |
+|-------|-----------|------|-----------------|
+| 🔵[A] The Pragmatist — Senior Eng Lead | `PROCESS_ENGINEER` | Delivery speed, bottleneck removal | Every delay has a measurable cause that can be fixed |
+| 🔴[B] The Guardian — Security Architect | `SYSTEMS_PARANOID` | Threat surface reduction | Assume the system is already partially compromised |
+| 🟢[C] The Advocate — Product Designer | `NONE` (ad-hoc) | User satisfaction, adoption | Users will always find the path of least resistance |
 
 ---
 
 ## Step 2 — Build & Dispatch: The Parallel Agent Engine
 
-This is the technical core. Read `references/agent-engine.md` for the complete implementation guide with code templates.
+Use Claude Code's **Agent tool** to spawn each debate agent as an independent subagent. Multiple Agent tool calls in a single response execute concurrently — genuine parallelism with truly independent context.
 
-### High-Level Architecture
+For each agent, spawn an `Agent` tool call with `subagent_type="debate-agent"` containing the prompt constructed from the template below. The `debate-agent` subagent already contains the static debate rules and output constraints in its system prompt — do NOT repeat them in the per-call prompt.
 
-```
-┌─────────────────────────────────────────────┐
-│              ORCHESTRATOR (Claude)           │
-│                                             │
-│  1. Build system prompts per agent          │
-│  2. Dispatch parallel API calls             │
-│  3. Collect & route responses               │
-│  4. Feed cross-agent context for rebuttals  │
-│  5. Step into Judge role for final verdict  │
-└──────────┬──────────┬──────────┬────────────┘
-           │          │          │
-     ┌─────▼──┐ ┌─────▼──┐ ┌────▼───┐
-     │Agent 🔵│ │Agent 🔴│ │Agent 🟢│  ... (parallel)
-     │ Own     │ │ Own     │ │ Own     │
-     │ system  │ │ system  │ │ system  │
-     │ prompt  │ │ prompt  │ │ prompt  │
-     └────────┘ └────────┘ └────────┘
-```
+Each agent runs in its own context — no shared state, no implicit cross-contamination. The orchestrator (you) collects all responses, then constructs the next round's context and dispatches again.
 
-### Implementation Approach: React Artifact with Anthropic API
+**Round flow:**
+1. Spawn all agents in parallel for Round 1 → collect opening positions
+2. Check for divergence (see Divergence Check in Step 3)
+3. Spawn all agents in parallel for Round 2, feeding each agent the OTHER agents' R1 outputs → collect cross-examinations
+4. Spawn all agents in parallel for Round 3, feeding each agent their own R1 output + ONLY the critiques directed at them → collect rebuttals
+5. Synthesize the Judge verdict directly (no subagent needed — you have full context)
 
-Build a **React artifact** that:
+### Canonical Prompt Template (per agent, per round)
 
-1. Renders the debate as a live, interactive panel
-2. Makes parallel `fetch()` calls to `https://api.anthropic.com/v1/messages`
-3. Streams or displays each agent's response as it arrives
-4. Manages round progression (Opening → Cross-Exam → Rebuttal → Judgment)
-5. Allows the user to intervene (add a question, request another round, challenge an agent)
+This is the single source of truth for agent prompts. Combine the base persona block + the appropriate round-specific block. The debate rules are already in the `debate-agent` subagent's system prompt — only include the dynamic content below.
 
-**Each agent gets its own API call** with a unique system prompt. They are truly independent — they don't share context until the orchestrator feeds them other agents' outputs in subsequent rounds.
-
-### System Prompt Template (per agent)
-
-Each agent's system prompt encodes their persona, constraints, and the debate rules. The template structure:
+**Base Persona Block** (same across all rounds for a given agent):
 
 ```
 You are [Agent Name], [Role Description].
 
 WHAT YOU OPTIMIZE FOR: [Lens]
 YOUR CORE BELIEF: [Core assumption]
-YOUR KNOWN BLIND SPOT (be aware of this): [Blind spot]
+YOUR KNOWN BLIND SPOT (be aware of this, but don't let it paralyze you): [Blind spot]
 
-DEBATE RULES:
-- Argue your position with conviction. You are not trying to be balanced.
-- Use concrete evidence, real-world examples, data, and logical arguments.
-- "Many experts agree" is not an argument. Be specific.
-- Do not use empty diplomacy. No "great point" or "I appreciate the perspective."
-- Keep your response focused: 150-250 words maximum.
-- When critiquing others, quote their specific claims. No straw-manning.
-- When conceding, be honest about what changed. When defending, bring NEW reasoning.
+[Include ONLY if archetype is assigned — omit entirely for ad-hoc (NONE) agents:]
+YOUR THINKING PATTERN: [Distill the archetype's thinking pattern from archetypes.md into 2-3 sentences capturing its core cognitive moves]
+YOUR ARGUMENTATION STYLE: [Distill the archetype's argumentation style into 2-3 sentences capturing its key rhetorical weapons and attack patterns]
+
+THE ISSUE BEING DEBATED: [Issue — full statement in R1, 1-2 sentence summary in R2/R3]
 ```
 
-### Round-by-Round Dispatch
+**Round 1 — Opening Position** (append to base block):
+```
+ROUND 1 — OPENING POSITION
+Produce exactly three sections:
+1. **Problem as I see it:** Frame the core problem from YOUR perspective. Other agents will frame it differently — that's the point.
+2. **My thesis:** State your position as a clear, falsifiable claim.
+3. **Strongest argument:** Your single most compelling piece of evidence or reasoning. One powerful argument beats three weak ones.
+```
+
+**Round 2 — Cross-Examination** (append to base block):
+```
+ROUND 2 — CROSS-EXAMINATION
+You will receive the opening positions of all other agents. For EACH other agent, produce a clearly labeled section:
+
+## Critique of [emoji][letter] [Agent Name]
+1. **Weakest link:** Identify the most vulnerable claim or assumption in their argument.
+2. **Edge case:** Under what realistic conditions does their recommendation fail? Your edge cases must be logically grounded — don't invent implausible failure scenarios.
+3. **Hidden cost:** What second-order effect are they ignoring?
+
+RULES:
+- Use the exact heading format above — it's needed for routing critiques in the next round.
+- Quote or reference their specific claims. No straw-manning.
+- "I generally agree but..." is BANNED. Find real disagreement or sharpen existing disagreement.
+- Each critique must be actionable: force them to concede or defend with new reasoning.
+```
+
+**Round 3 — Rebuttal** (append to base block):
+```
+ROUND 3 — REBUTTAL
+You will receive your own Round 1 position and the critiques other agents directed at you. You must:
+1. **Concede:** Acknowledge points that genuinely changed your thinking. Explain what shifted. If no critique lands, explain specifically why each one fails — honest non-concession is better than a token concession on a trivial point.
+2. **Defend:** For positions you still hold, provide NEW reasoning or evidence not used in Round 1.
+3. **Updated thesis:** Restate your position. It may have shifted, narrowed, or been refined. If unchanged, explain specifically why the critiques didn't land.
+
+Intellectual honesty is paramount.
+```
+
+### Token Efficiency
+
+- For Rounds 2 and 3, summarize the issue to ~1-2 sentences in the `THE ISSUE BEING DEBATED` field instead of re-embedding the full issue statement.
+- Structure cross-examination output with explicit per-opponent headers (see Round 2 template) so rebuttal routing can extract only the relevant critiques.
+- **When agent count > 3**: Summarize each agent's R1 output to ~100 words (preserving thesis and key argument) before feeding to other agents in Round 2. Preserve full outputs for the Judge's synthesis.
+
+### Context Routing
 
 | Round | What agents receive | What they produce |
 |---|---|---|
-| **Round 1: Opening** | Just the issue + their system prompt | Problem framing, thesis, strongest argument |
-| **Round 2: Cross-Exam** | All other agents' Round 1 outputs | Direct critiques: weakest link, edge cases, hidden costs for each opponent |
-| **Round 3: Rebuttal** | Critiques directed at them from Round 2 | Concessions, new defenses, updated thesis |
-| **Judgment** | All rounds from all agents | Orchestrator (Claude) does this directly — not an API call |
+| **Round 1: Opening** | Base persona + R1 block + full issue | Problem framing, thesis, strongest argument |
+| **Round 2: Cross-Exam** | Base persona + R2 block + summarized issue + all OTHER agents' R1 outputs | Per-opponent critiques with structured headings |
+| **Round 3: Rebuttal** | Base persona + R3 block + summarized issue + agent's own R1 output + ONLY critiques directed at them | Concessions, new defenses, updated thesis |
+| **Judgment** | All rounds from all agents | Orchestrator (Claude) does this directly — no subagent |
+
+**Round 2 prompt construction** — feed other agents' outputs:
+```
+Here are the opening positions from the other agents. Cross-examine each one.
+
+---
+🔴[B] The Systems Architect:
+[Full Round 1 output from Agent B]
+
+---
+🟢[C] The Product Manager:
+[Full Round 1 output from Agent C]
+```
+
+**Round 3 prompt construction** — include own R1 + extracted critiques:
+```
+Here is your Round 1 position for reference, followed by the critiques directed at you. Respond to each critique.
+
+YOUR ROUND 1 POSITION:
+[This agent's own R1 output]
+
+---
+CRITIQUES DIRECTED AT YOU:
+
+🔴[B] The Systems Architect's critique of you:
+[Extracted "## Critique of 🔵[A]..." section from Agent B's R2 output]
+
+---
+🟢[C] The Product Manager's critique of you:
+[Extracted "## Critique of 🔵[A]..." section from Agent C's R2 output]
+```
+
+If heading parsing fails (agent didn't follow the format), fall back to sending the full cross-exam output with a note: "The following contains critiques of all agents. Focus on and respond to the points directed at you."
 
 ---
 
@@ -162,35 +281,94 @@ Dispatch all agents in parallel. Each agent independently produces:
 2. **Thesis** — A clear, falsifiable claim
 3. **Strongest argument** — Single most compelling evidence or reasoning. Quality over quantity.
 
+### Divergence Check (after Round 1)
+
+After collecting all R1 outputs, compare agent theses before proceeding:
+
+1. **Check**: Do 2+ agents reach the same directional conclusion?
+2. **If divergent** (all agents take genuinely different positions): Proceed to Round 2.
+3. **If convergent** (2+ agents agree directionally):
+   - Flag to user: *"Agents [X] and [Y] are converging — restructuring to surface genuine disagreement."*
+   - Pick the most convergent agent. Either:
+     (a) Sharpen their blind spot to force a different position, OR
+     (b) Replace them with a premise-challenger who questions whether the decision is needed at all
+   - Re-run Round 1 for the restructured agent ONLY (other agents keep their R1 outputs)
+   - Maximum 1 restructure attempt. If divergence still fails after retry, proceed with a note in the Judge's instructions: *"Limited divergence achieved despite restructuring — verdict confidence is reduced."*
+
 ### Round 2: Cross-Examination
 
-This is the most critical phase. Feed each agent the full text of every other agent's Round 1 output.
+This is the most critical phase. Feed each agent the full text of every other agent's Round 1 output (or summaries if agent count > 3).
 
-Each agent must, for every opponent:
-1. **Identify the weakest link** — Most vulnerable claim or assumption
-2. **Stress-test with edge cases** — Under what realistic conditions does the recommendation fail?
-3. **Name the hidden cost** — What second-order effect is the opponent ignoring?
+Each agent must use **explicit section headers per opponent** to enable clean routing in Round 3:
 
-Enforcement rules (encode these in the round-specific user message):
-- Must quote or reference specific claims — no vague disagreement
-- "I generally agree but..." is banned — find real disagreement
-- Each critique must be actionable: force a concession or new defense
+```
+## Critique of 🔵[A] [Agent Name]
+1. **Weakest link:** [Most vulnerable claim or assumption]
+2. **Edge case:** [Realistic conditions where their recommendation fails]
+3. **Hidden cost:** [Second-order effect they're ignoring]
+
+## Critique of 🟢[C] [Agent Name]
+...
+```
 
 ### Round 3: Rebuttals & Updated Positions
 
-Feed each agent only the critiques directed at them. Each must:
+**Context routing is critical here.** When constructing each agent's Round 3 prompt:
+1. Include the agent's **own R1 output** so they can reference their original position
+2. Extract **ONLY the critique sections directed at that agent** from the Round 2 outputs
+3. Do NOT send the full cross-examination — each agent should see only what was said about them
 
-1. **Concede** at least one valid point — explain what it changes
-2. **Defend** remaining positions with *new* reasoning not used in Round 1
+Each agent must:
+
+1. **Concede** points that genuinely changed their thinking — explain what shifted. If no critique lands, explain specifically why each one fails. Honest non-concession is better than a token concession on a trivial point.
+2. **Defend** remaining positions with *new* reasoning or evidence not used in Round 1
 3. **Restate thesis** — refined, narrowed, or unchanged (with justification)
 
-Agents who concede nothing are suspicious. Agents who concede everything are useless.
+### Quick Analysis Mode (2 rounds)
+
+When using quick analysis mode (decided in Step 0), skip Round 3 entirely:
+
+1. Run Round 1 (Opening Positions) as normal
+2. Run Divergence Check as normal
+3. Run Round 2 (Cross-Examination) as normal
+4. Skip directly to the Judge verdict with adjusted instructions (see Step 4)
+
+---
+
+## Display Protocol
+
+Present each round's results to the user as they complete. This keeps the user engaged and lets them see the argument unfold.
+
+**Between rounds**, display a brief progress note:
+- After Round 1: *"Round 1 complete — [N] opening positions collected. Checking divergence..."*
+- After divergence check: *"Divergence confirmed. Proceeding to cross-examination..."*
+- After Round 2: *"Cross-examination complete. Routing critiques to agents for rebuttals..."*
+- After Round 3: *"All rounds complete. Synthesizing the Judge's verdict..."*
+
+**Round output format** — present each agent's output under their identifier:
+
+```
+### Round [N]: [Round Name]
+
+**🔵[A] The Pragmatist — Senior Engineering Lead**
+[Agent A's output]
+
+**🔴[B] The Systems Architect — Platform Engineer**
+[Agent B's output]
+
+**🟢[C] The Product Manager — User Advocate**
+[Agent C's output]
+```
+
+Maintain consistent agent ordering across all rounds so the user can track each agent's evolution. Each agent should speak distinctly — an economist uses different language than an ethicist, a startup founder sounds different from a policy wonk. The Judge is measured, precise, and authoritative.
 
 ---
 
 ## Step 4 — Final Judgment
 
-Drop all agent roles. Claude becomes an impartial **Judge** whose only loyalty is to the strongest reasoning. Do NOT use an API call for this — the Judge benefits from having orchestrated the entire debate.
+Drop all agent roles. You become an impartial **Judge** whose only loyalty is to the strongest reasoning. Do NOT use a subagent for this — the Judge benefits from having orchestrated the entire debate.
+
+**In quick analysis mode (2 rounds)**, preface the synthesis with: *"Note: No rebuttal round was conducted. This verdict is based on opening positions and cross-examination only."* Note where rebuttals might have changed the outcome.
 
 Produce three sections:
 
@@ -200,7 +378,10 @@ Produce three sections:
 
 ### ⚖️ Verdict
 - **Recommendation** — Clear, actionable. Not "it depends." Commit to a position while acknowledging conditions.
-- **Confidence level** — High / Moderate / Low, with one-sentence justification.
+- **Confidence level** — High / Moderate / Low, with one-sentence justification. Calibrate using these criteria:
+  - **High:** Agents converged from different reasoning paths + strong real-world evidence supports the conclusion.
+  - **Moderate:** Genuine unresolved tensions remain + evidence is mixed or context-dependent.
+  - **Low:** Insufficient information to decide, all positions are equally defensible, or the verdict hinges on unknowable future conditions.
 - **Key conditions** — What must be true for this verdict to hold? If these conditions change, the verdict may flip.
 
 ### ⚖️ Dissent Log
@@ -208,43 +389,39 @@ Produce three sections:
 - **Flip conditions** — Under what specific, realistic scenarios would the verdict reverse? Be concrete.
 - **Open questions** — What couldn't be settled and would need external data or experimentation to resolve?
 
+**Judge citation rule**: Quote VERBATIM text from agent outputs — use exact words, not paraphrases. Every verdict point must cite at least one specific agent by emoji+letter. Do not synthesize claims agents didn't make.
+
+The Judge's synthesis can be 300-500 words. Use consistent visual identifiers — 🔵[A] 🔴[B] 🟢[C] 🟡[D] 🟣[E] — so agents are identifiable at a glance.
+
 ---
 
 ## Step 5 — Post-Debate Options
 
-After delivering the verdict, offer the user:
+After delivering the verdict, offer the user these options:
 
-1. **"Go deeper"** — Run an additional cross-examination round focused on unresolved tensions from the Dissent Log
-2. **"Challenge the verdict"** — User introduces a new constraint or objection; agents respond
-3. **"Add an agent"** — Introduce a new perspective that was missing
-4. **"Export"** — Generate a clean document (markdown or docx) summarizing the full debate and verdict
+1. **"Go deeper"** — Spawn agents again on unresolved tensions from the Dissent Log
+2. **"Challenge the verdict"** — Introduce a new constraint; all agents respond in a mini-round
+3. **"Add an agent"** — Define a new perspective; existing agents cross-examine the newcomer
+4. **"Export"** — Write a clean debate transcript to `debate-[topic-slug].md`
 
----
-
-## Formatting & Tone
-
-- **Voice differentiation:** Each agent should speak distinctly. An economist uses different language than an ethicist. A startup founder sounds different from a policy wonk. The Judge is measured, precise, and authoritative.
-- **Length discipline:** Each agent's contribution per round: 150–250 words. The Judge's synthesis can be longer (300–500 words).
-- **No premature consensus:** If all agents converge too early, the Judge must call this out and name what's being suppressed.
-- **No empty diplomacy:** "That's a great point" and "I appreciate the perspective" are banned. Substance only.
-- **Evidence standard:** Concrete reasoning, real-world examples, data, or logical arguments. "Many experts agree" is not an argument.
-- **Visual tracking:** Use consistent emoji markers (🔵🔴🟢🟡🟣) so agents are identifiable at a glance across all rounds.
+When the user selects an option, read `${CLAUDE_SKILL_DIR}/references/post-debate.md` for detailed instructions.
 
 ---
 
-## Fallback: Non-Artifact Mode
+## Success Metrics
 
-If for any reason the React artifact approach fails (API errors, environment constraints), fall back to **inline simulation mode**:
-
-- Claude plays all roles sequentially in a single response
-- Still maintain distinct voices, the cross-examination structure, and the Judge verdict
-- Label each section clearly with agent emojis
-- This is less rigorous (agents share context implicitly) but still valuable
-
-The key difference: in fallback mode, explicitly note to the user that this is a simulated debate rather than truly independent agents, and offer to retry the artifact approach if they'd like.
+A debate succeeded when:
+- **Genuine disagreement achieved** — All agents took distinctly different positions (verified by divergence check)
+- **Zero hallucinated examples** — No fabricated company names, statistics, or research papers in any agent output
+- **Judge cites verbatim** — Every verdict point references specific agent text by emoji+letter
+- **Actionable verdict** — User received a clear recommendation, not "it depends"
+- **User engagement** — User understands the tradeoffs and can make an informed decision
 
 ---
 
 ## Reference Files
 
-- `references/agent-engine.md` — Complete implementation guide: React artifact code templates, API call patterns, system prompt construction, error handling, streaming, and the full round-management state machine. **Read this before building the artifact.**
+- `${CLAUDE_SKILL_DIR}/references/archetypes.md` — Thinking archetypes for enriching agent profiles. **Read once at the start of Step 1** (Agent Assembly). Provides cognitive DNA — thinking patterns, blind spots, argumentation styles, and clash partners — for 10 distilled archetypes.
+- `${CLAUDE_SKILL_DIR}/references/edge-cases.md` — Error handling, special issue types (political, personal, trivial), mid-debate interventions, fallback inline simulation, and performance notes. **Read only when an agent fails or an edge case arises.**
+- `${CLAUDE_SKILL_DIR}/references/post-debate.md` — Detailed instructions for post-debate options (go deeper, challenge, add agent, export). **Read when the user selects a post-debate option.**
+- `${CLAUDE_SKILL_DIR}/references/export-template.md` — Markdown template for debate transcript export. **Read when exporting.**

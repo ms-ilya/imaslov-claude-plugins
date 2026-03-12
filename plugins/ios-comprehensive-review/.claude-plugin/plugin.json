@@ -1,0 +1,9 @@
+{
+  "name": "ios-comprehensive-review",
+  "description": "Multi-agent comprehensive iOS/Swift code review with parallel analysis, cross-file checks, and resumable stages.",
+  "version": "1.1.0",
+  "author": {
+    "name": "Ilya"
+  },
+  "keywords": ["ios", "swift", "code-review", "multi-agent", "comprehensive"]
+}

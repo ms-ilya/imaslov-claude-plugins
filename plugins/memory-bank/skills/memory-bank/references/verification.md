@@ -1,125 +1,149 @@
 # Verification Procedure
 
 This procedure is **mandatory** for every Memory Bank write operation. Never skip it.
-Run it after drafting docs but before committing them to the memory-bank.
+Run verification **after writing each file**, not after writing all files — this prevents narrative anchoring where early assumptions propagate unchecked across documents.
 
 ---
 
 ## Overview
 
-The verification pass catches hallucinations before they enter the documentation.
+The verification pass catches hallucinations before they enter documentation.
 Every claim in a Memory Bank file must be traceable to actual source code.
+
+**Key principle:** Use Claude Code's dedicated tools (`Grep`, `Glob`, `Read`) for all verification — not bash `grep`/`find`/`test`. Dedicated tools have structured output that cannot be fabricated, while bash commands can fail silently or produce ambiguous results.
+
+---
+
+## Language Detection (Run Once)
+
+Before verification, detect the project's primary language to determine file extensions and type keywords:
+
+| Language | Detect via | Extensions | Type Keywords |
+|----------|-----------|------------|---------------|
+| **Swift** | `Package.swift`, `*.xcodeproj`, `*.xcworkspace` | `*.swift` | `class, struct, protocol, enum, actor, typealias` |
+| **Python** | `setup.py`, `pyproject.toml`, `*.py` | `*.py` | `class, def` (+ `@dataclass`, `Protocol`) |
+| **TypeScript** | `tsconfig.json`, `*.ts`, `*.tsx` | `*.{ts,tsx}` | `class, interface, type, enum` |
+| **JavaScript** | `package.json`, `*.js`, `*.jsx` | `*.{js,jsx}` | `class, function` |
+| **Rust** | `Cargo.toml`, `*.rs` | `*.rs` | `struct, trait, enum, impl, mod, type` |
+| **Go** | `go.mod`, `*.go` | `*.go` | `type .* struct, type .* interface, func` |
+| **Kotlin** | `build.gradle.kts`, `*.kt` | `*.kt` | `class, data class, sealed class, interface, object, enum class` |
+| **Java** | `pom.xml`, `build.gradle`, `*.java` | `*.java` | `class, interface, enum, record` |
+
+Use `Glob` to detect the language. If multiple languages are present, include all relevant extensions in verification searches.
+
+---
 
 ## Step-by-Step Procedure
 
 ### Phase 1: File Path Verification
 
-For every file path mentioned in any Memory Bank document:
+For every file path mentioned in the document you just wrote:
 
-```bash
-# For each path referenced in docs:
-test -f "<project-root>/<path>" && echo "✅ EXISTS" || echo "❌ MISSING: <path>"
-```
-
-**If a path fails:**
-- Check for typos, case sensitivity (especially on case-sensitive filesystems)
-- Search for the file by name: `find . -name "<filename>"`
-- If found at a different path → fix the path in docs
-- If not found anywhere → remove the reference or mark `⚠️ FILE NOT FOUND`
+1. Use `Glob` to check if the path exists:
+   - Pattern: the exact relative path
+   - If not found, search by filename: `**/filename.ext`
+2. If found at a different path → fix the path in docs
+3. If not found anywhere → remove the reference or mark `⚠️ FILE NOT FOUND`
 
 **Never leave an unverified path in documentation without a flag.**
 
 ### Phase 2: Type Name Verification
 
-For every class, struct, protocol, or enum mentioned in docs:
+For every type (class, struct, protocol, enum, interface, trait, etc.) mentioned in docs:
 
-```bash
-# Verify type exists
-grep -rn "class <TypeName>" --include="*.swift" .
-grep -rn "struct <TypeName>" --include="*.swift" .
-grep -rn "protocol <TypeName>" --include="*.swift" .
-grep -rn "enum <TypeName>" --include="*.swift" .
-```
+1. Use `Grep` with the detected language extensions:
+   - Pattern: `\b(class|struct|protocol|enum)\s+TypeName\b` (adjust keywords per language)
+   - Use `glob` parameter to filter by language extensions
+   - Use `output_mode: "content"` to see the actual declaration
+2. Verify the type is in the **file you documented it in** — not just that it exists somewhere
+3. If not found:
+   - Check for typos and naming variations
+   - Check for type aliases / re-exports
+   - Check dependencies (note "from dependency: [library]" if found there)
+   - If genuinely not found → remove or mark `⚠️ TYPE NOT FOUND`
 
-**If a type is not found:**
-- Check for typos and naming variations
-- It may be defined via typealias — check: `grep -rn "typealias <TypeName>" --include="*.swift"`
-- It may be in a dependency (Pods, SPM packages) — note this if so
-- If genuinely not found → remove or mark `⚠️ TYPE NOT FOUND`
+**Use word-boundary matching (`\b`) to avoid false positives** (e.g., matching `UserManager` when searching for `User`).
 
 ### Phase 3: Behavioral Claim Verification
 
 For every statement about what code does (e.g., "TokenManager handles OAuth refresh"):
 
-```bash
-# Verify the described behavior exists in the claimed file
-grep -n "func refresh\|func handleRefresh\|refresh(" "<file-path>"
-```
+1. Use `Grep` to find the function/method in the claimed file
+2. Use `Read` to read the actual function body (not just the signature)
+3. Verify the description matches what the code **actually does**, not just what the name suggests
 
 **Levels of confidence:**
-- **Verified** (default, no flag needed): Function/method found, behavior matches description
-- **⚠️ INFERRED**: Code structure suggests this behavior, but it's not explicit (e.g., a method is called `refresh` but doesn't have documentation confirming it handles OAuth specifically)
+- **Verified** (no flag): Function found, body read, behavior matches description
+- **⚠️ INFERRED**: Function found by name, but behavior inferred from name/context without tracing the full implementation. Must include evidence: "Contains `refresh()` method (verified). OAuth relationship is INFERRED from class name `TokenManager`."
 - **⚠️ UNVERIFIED**: Cannot trace to actual code — remove the claim or flag it
 
 ### Phase 4: Cross-Reference Verification
 
 For every cross-feature dependency mentioned:
 
-```bash
-# Verify that feature A actually imports/uses feature B
-grep -rn "import <ModuleName>" --include="*.swift" <feature-A-path>/
-grep -rn "<TypeFromFeatureB>" --include="*.swift" <feature-A-path>/
-```
+1. Use `Grep` to verify that feature A actually imports/references feature B
+2. Search for import statements and type references from the other feature
+3. Use the detected language's file extensions
 
-### Phase 5: Staleness Check (Update Mode Only)
+### Phase 5: Internal Cross-Reference Check
 
-When updating existing docs, check for removed content:
+For every reference between memory-bank files (e.g., "See TROUBLESHOOTING.md for details"):
 
-```bash
-# For each file path in existing docs
-# (parse the markdown tables to extract paths, then verify each)
-test -f "<path>" || echo "⚠️ STALE: <path> no longer exists"
+1. Verify the referenced file exists in `memory-bank/`
+2. Verify the referenced section/heading exists within that file
+3. Fix or remove broken internal cross-references
 
-# For each type name in existing docs
-grep -rn "class\|struct\|protocol\|enum" --include="*.swift" . | grep "<TypeName>" || echo "⚠️ STALE: <TypeName>"
-```
+### Phase 6: Staleness Check (Update Mode Only)
 
-**Stale content policy:**
-- Removed files → remove from docs entirely (do not leave references to deleted files)
-- Renamed files → update the path
-- Renamed types → update the type name
-- Changed behavior → update the description
+When updating existing docs:
 
----
-
-## Verification Summary Format
-
-After completing verification, mentally confirm:
-
-- Total paths checked: [N]
-- Paths verified: [N]
-- Paths flagged/removed: [N]
-- Types checked: [N]
-- Types verified: [N]
-- Types flagged/removed: [N]
-- Behavioral claims verified: [N]
-- Claims flagged as INFERRED: [N]
-- Claims removed: [N]
-
-This does NOT need to be written into the docs — it is an internal quality check.
+1. For each file path in existing docs → verify it still exists via `Glob`
+2. For each type name in existing docs → verify it still exists via `Grep`
+3. **Stale content policy:**
+   - Removed files → remove from docs entirely
+   - Renamed files → update the path
+   - Renamed types → update the type name
+   - Changed behavior → update the description
 
 ---
 
-## Common Verification Pitfalls
+## INFERRED Claims Threshold
+
+If more than **30% of behavioral claims** in a single file are marked `⚠️ INFERRED`, the analysis is insufficient. Stop and either:
+- Read more source files to gather evidence
+- Ask the user for clarification about the feature's scope
+- Narrow the feature scope to areas you can verify
+
+Do not paper over knowledge gaps with INFERRED flags.
+
+---
+
+## Verification Summary (MANDATORY Output)
+
+After verifying each file, output a verification summary in the conversation (not in the docs):
+
+```
+Verified: <filename>
+- Paths: N checked, N verified, N flagged
+- Types: N checked, N verified, N flagged
+- Behaviors: N checked, N verified, N inferred
+- INFERRED rate: X% (must be ≤30%)
+```
+
+This summary is how the user confirms verification actually ran. Never skip it.
+
+---
+
+## Common Pitfalls
 
 | Pitfall | Prevention |
 |---------|------------|
-| **Case sensitivity** | macOS is case-insensitive by default, but Linux and CI are not. Always use exact casing from the filesystem. |
-| **Generated files** | Files in `*.generated.swift` or build artifacts may not exist until a build runs. Note this if documenting generated code. |
-| **Dependency types** | Types from SPM/CocoaPods exist in `Pods/` or `.build/` — they're real but may not be in the project source. Note "from dependency: [library]" when referencing them. |
-| **Protocol extensions** | A method may be defined in a protocol extension, not the conforming type directly. Check both. |
-| **Computed properties** | Not all "getters" are functions. Check for `var <name>: Type { get }` patterns too. |
-| **Objective-C bridging** | Some types may be defined in `.h`/`.m` files. If the project has mixed ObjC/Swift, search those too: `--include="*.h" --include="*.m"` |
+| **Case sensitivity** | macOS is case-insensitive, Linux is not. Use exact casing from the filesystem. |
+| **Substring matches** | Use word-boundary `\b` in Grep patterns to avoid matching `UserManager` when searching for `User`. |
+| **Generated files** | Files in `*.generated.*` or build artifacts may not exist until build. Note this if applicable. |
+| **Dependency types** | Types from package managers exist in `Pods/`, `.build/`, `node_modules/` — note "from dependency: [library]". |
+| **Protocol/trait extensions** | A method may be defined in an extension, not the conforming type. Check both. |
+| **Name ≠ behavior** | A function named `refresh()` could refresh anything. Read the body, not just the name. |
 
 ---
 
@@ -127,10 +151,10 @@ This does NOT need to be written into the docs — it is an internal quality che
 
 | Situation | Action |
 |-----------|--------|
-| Path exists but content changed significantly | Update description, no flag needed |
+| Path exists but content changed | Update description, no flag |
 | Path doesn't exist, similar file found | Fix path, no flag |
 | Path doesn't exist, nothing similar | Remove from docs |
-| Type exists but behavior unclear | Keep type, flag behavior as `⚠️ INFERRED` |
+| Type exists but behavior unclear | Keep type, flag behavior `⚠️ INFERRED` with evidence |
 | Type doesn't exist anywhere | Remove from docs |
-| Behavior described is plausible but unconfirmed | Flag as `⚠️ INFERRED` |
-| Behavior described contradicts code | Fix description to match code |
+| Behavior plausible but unconfirmed | Flag `⚠️ INFERRED` with what WAS verified |
+| Behavior contradicts code | Fix description to match code |

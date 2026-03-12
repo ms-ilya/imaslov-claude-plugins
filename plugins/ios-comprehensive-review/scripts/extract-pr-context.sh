@@ -1,0 +1,350 @@
+#!/bin/bash
+# ABOUTME: Extracts PR or branch context and outputs minimal JSON with line ranges.
+
+set -e
+
+OUTPUT_DIR=".ios-review-temp"
+OUTPUT_FILE="$OUTPUT_DIR/pr-context.json"
+
+# Parse arguments: PR mode or branch mode
+MODE=""
+PR_NUMBER=0
+HEAD_BRANCH=""
+BASE_BRANCH=""
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --base)
+            BASE_BRANCH="$2"
+            shift 2
+            ;;
+        --branch)
+            HEAD_BRANCH="$2"
+            shift 2
+            ;;
+        *)
+            if [ -z "$MODE" ] && [[ "$1" =~ ^[0-9]+$ ]]; then
+                MODE="pr"
+                PR_NUMBER="$1"
+            else
+                echo "Unknown argument: $1" >&2
+                echo "Usage: $0 <pr_number>" >&2
+                echo "       $0 --base <base_branch> [--branch <head_branch>]" >&2
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Determine mode
+if [ -n "$BASE_BRANCH" ]; then
+    MODE="branch"
+elif [ "$MODE" != "pr" ]; then
+    echo "Usage: $0 <pr_number>" >&2
+    echo "       $0 --base <base_branch> [--branch <head_branch>]" >&2
+    exit 1
+fi
+
+mkdir -p "$OUTPUT_DIR"
+
+# Fetch metadata based on mode
+if [ "$MODE" = "pr" ]; then
+    META=$(gh pr view "$PR_NUMBER" --json number,title,author,headRefName,baseRefName)
+    TITLE=$(echo "$META" | jq -r '.title')
+    AUTHOR=$(echo "$META" | jq -r '.author.login')
+    HEAD=$(echo "$META" | jq -r '.headRefName')
+    BASE=$(echo "$META" | jq -r '.baseRefName')
+else
+    # Branch mode: derive metadata from git
+    HEAD="${HEAD_BRANCH:-$(git rev-parse --abbrev-ref HEAD)}"
+    BASE="$BASE_BRANCH"
+    AUTHOR=$(git config user.name 2>/dev/null || echo "unknown")
+    COMMIT_COUNT=$(git rev-list --count "$BASE".."$HEAD" 2>/dev/null || echo "0")
+    TITLE="Branch review: $HEAD → $BASE ($COMMIT_COUNT commits)"
+fi
+
+# Initialize arrays
+declare -a CHANGED_FILES
+declare -a SIGNATURE_CHANGES
+declare -a DELETED_SYMBOLS
+
+# Flush a pending deleted function into DELETED_SYMBOLS
+flush_deleted_func() {
+    if [ -n "$PREV_MINUS_FUNC" ]; then
+        local func_name="${PREV_MINUS_FUNC%%|*}"
+        local old_sig="${PREV_MINUS_FUNC#*|}"
+        DELETED_SYMBOLS+=("$(jq -n \
+            --arg method "$func_name" \
+            --arg old_signature "$old_sig" \
+            --arg file "$CURRENT_FILE" \
+            --arg change_type "deleted" \
+            '{method: $method, old_signature: $old_signature, file: $file, line: 0, change_type: $change_type}')")
+        PREV_MINUS_FUNC=""
+    fi
+}
+
+# Regex for function declarations (captures name, matches both generic and non-generic)
+FUNC_RE='func[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[<(]'
+
+# Parse diff - process file by file
+CURRENT_FILE=""
+CURRENT_CHANGE_TYPE=""
+CURRENT_RENAME_FROM=""
+CURRENT_LINES=()
+CURRENT_SYMBOLS=()
+CURRENT_LINE_NUM=0
+IN_HUNK=0
+PREV_MINUS_FUNC=""
+
+# Function to collapse consecutive lines into ranges
+collapse_to_ranges() {
+    local lines=("$@")
+    local ranges=()
+    local start=""
+    local prev=""
+
+    for line in "${lines[@]}"; do
+        if [ -z "$start" ]; then
+            start=$line
+            prev=$line
+        elif [ $((prev + 1)) -eq "$line" ]; then
+            prev=$line
+        else
+            if [ "$start" -eq "$prev" ]; then
+                ranges+=("$start")
+            else
+                ranges+=("$start-$prev")
+            fi
+            start=$line
+            prev=$line
+        fi
+    done
+
+    if [ -n "$start" ]; then
+        if [ "$start" -eq "$prev" ]; then
+            ranges+=("$start")
+        else
+            ranges+=("$start-$prev")
+        fi
+    fi
+
+    # Output as JSON array
+    printf '%s\n' "${ranges[@]}" | jq -R . | jq -s .
+}
+
+# Function to output current file as JSON
+output_file() {
+    if [ -n "$CURRENT_FILE" ] && [[ "$CURRENT_FILE" == *.swift ]]; then
+        local lines_json="[]"
+        local symbols_json="[]"
+
+        if [ ${#CURRENT_LINES[@]} -gt 0 ]; then
+            lines_json=$(collapse_to_ranges "${CURRENT_LINES[@]}")
+        fi
+
+        if [ ${#CURRENT_SYMBOLS[@]} -gt 0 ]; then
+            symbols_json=$(printf '%s\n' "${CURRENT_SYMBOLS[@]}" | jq -s .)
+        fi
+
+        if [ -n "$CURRENT_RENAME_FROM" ]; then
+            CHANGED_FILES+=("$(jq -n \
+                --arg path "$CURRENT_FILE" \
+                --arg change_type "renamed" \
+                --arg renamed_from "$CURRENT_RENAME_FROM" \
+                --argjson added_lines "$lines_json" \
+                --argjson new_symbols "$symbols_json" \
+                '{path: $path, change_type: $change_type, renamed_from: $renamed_from, added_lines: $added_lines, new_symbols: $new_symbols}')")
+        else
+            CHANGED_FILES+=("$(jq -n \
+                --arg path "$CURRENT_FILE" \
+                --arg change_type "$CURRENT_CHANGE_TYPE" \
+                --argjson added_lines "$lines_json" \
+                --argjson new_symbols "$symbols_json" \
+                '{path: $path, change_type: $change_type, added_lines: $added_lines, new_symbols: $new_symbols}')")
+        fi
+    fi
+}
+
+# Process diff line by line
+while IFS= read -r line || [ -n "$line" ]; do
+    # New file header
+    if [[ "$line" =~ ^diff\ --git\ a/(.+)\ b/(.+)$ ]]; then
+        flush_deleted_func
+        output_file
+
+        A_PATH="${BASH_REMATCH[1]}"
+        B_PATH="${BASH_REMATCH[2]}"
+
+        CURRENT_FILE="$B_PATH"
+        CURRENT_LINES=()
+        CURRENT_SYMBOLS=()
+        CURRENT_CHANGE_TYPE="modified"
+        CURRENT_RENAME_FROM=""
+        IN_HUNK=0
+        PREV_MINUS_FUNC=""
+
+        # Track renamed files
+        if [ "$A_PATH" != "$B_PATH" ]; then
+            CURRENT_RENAME_FROM="$A_PATH"
+        fi
+
+        continue
+    fi
+
+    # Skip non-swift files
+    if [ -z "$CURRENT_FILE" ] || [[ "$CURRENT_FILE" != *.swift ]]; then
+        continue
+    fi
+
+    # Detect new file
+    if [[ "$line" =~ ^new\ file\ mode ]]; then
+        CURRENT_CHANGE_TYPE="added"
+        continue
+    fi
+
+    # Detect deleted file
+    if [[ "$line" =~ ^deleted\ file\ mode ]]; then
+        CURRENT_CHANGE_TYPE="deleted"
+        continue
+    fi
+
+    # Hunk header - extract starting line number
+    if [[ "$line" =~ ^@@\ -[0-9]+(,[0-9]+)?\ \+([0-9]+)(,[0-9]+)?\ @@ ]]; then
+        flush_deleted_func
+        CURRENT_LINE_NUM="${BASH_REMATCH[2]}"
+        IN_HUNK=1
+        continue
+    fi
+
+    if [ "$IN_HUNK" -eq 0 ]; then
+        continue
+    fi
+
+    # Context line (no prefix or space prefix)
+    if [[ "$line" =~ ^[\ ] ]] || [[ ! "$line" =~ ^[-+] ]]; then
+        ((CURRENT_LINE_NUM++)) || true
+        flush_deleted_func
+        continue
+    fi
+
+    # Removed line - check for function signature
+    if [[ "$line" =~ ^\- ]]; then
+        CONTENT="${line:1}"
+        if [[ "$CONTENT" =~ $FUNC_RE ]]; then
+            PREV_MINUS_FUNC="${BASH_REMATCH[1]}|$CONTENT"
+        fi
+        continue
+    fi
+
+    # Added line
+    if [[ "$line" =~ ^\+ ]]; then
+        CONTENT="${line:1}"
+        CURRENT_LINES+=("$CURRENT_LINE_NUM")
+
+        # Check for signature change (paired with previous minus)
+        if [ -n "$PREV_MINUS_FUNC" ]; then
+            if [[ "$CONTENT" =~ $FUNC_RE ]]; then
+                FUNC_NAME="${BASH_REMATCH[1]}"
+                OLD_FUNC_NAME="${PREV_MINUS_FUNC%%|*}"
+                if [ "$FUNC_NAME" = "$OLD_FUNC_NAME" ]; then
+                    OLD_SIG="${PREV_MINUS_FUNC#*|}"
+                    SIGNATURE_CHANGES+=("$(jq -n \
+                        --arg method "$FUNC_NAME" \
+                        --arg old_signature "$OLD_SIG" \
+                        --arg new_signature "$CONTENT" \
+                        --arg file "$CURRENT_FILE" \
+                        --argjson line "$CURRENT_LINE_NUM" \
+                        --arg change_type "modified" \
+                        '{method: $method, old_signature: $old_signature, new_signature: $new_signature, file: $file, line: $line, change_type: $change_type}')")
+                    PREV_MINUS_FUNC=""
+                else
+                    # Different function name on + line — the old one was deleted
+                    flush_deleted_func
+                fi
+            else
+                # Non-function + line — the old function was deleted
+                flush_deleted_func
+            fi
+        fi
+
+        # Extract symbols from added lines
+        # Function
+        if [[ "$CONTENT" =~ $FUNC_RE ]]; then
+            CURRENT_SYMBOLS+=("$(jq -n --arg type "function" --arg name "${BASH_REMATCH[1]}" --argjson line "$CURRENT_LINE_NUM" '{type: $type, name: $name, line: $line}')")
+        fi
+
+        # Property (var/let)
+        if [[ "$CONTENT" =~ (var|let)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*: ]]; then
+            CURRENT_SYMBOLS+=("$(jq -n --arg type "property" --arg name "${BASH_REMATCH[2]}" --argjson line "$CURRENT_LINE_NUM" '{type: $type, name: $name, line: $line}')")
+        fi
+
+        # Class/struct/enum/protocol
+        if [[ "$CONTENT" =~ (class|struct|enum|protocol)[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*) ]]; then
+            TYPE="${BASH_REMATCH[1]}"
+            NAME="${BASH_REMATCH[2]}"
+            CURRENT_SYMBOLS+=("$(jq -n --arg type "$TYPE" --arg name "$NAME" --argjson line "$CURRENT_LINE_NUM" '{type: $type, name: $name, line: $line}')")
+        fi
+
+        # Typealias
+        if [[ "$CONTENT" =~ typealias[[:space:]]+([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*= ]]; then
+            CURRENT_SYMBOLS+=("$(jq -n --arg type "typealias" --arg name "${BASH_REMATCH[1]}" --argjson line "$CURRENT_LINE_NUM" '{type: $type, name: $name, line: $line}')")
+        fi
+
+        ((CURRENT_LINE_NUM++)) || true
+        continue
+    fi
+done < <(
+    if [ "$MODE" = "pr" ]; then
+        gh pr diff "$PR_NUMBER"
+    else
+        git diff "$BASE"..."$HEAD"
+    fi
+)
+
+# Flush any pending deleted function and output last file
+flush_deleted_func
+output_file
+
+# Build final JSON
+CHANGED_FILES_JSON="[]"
+if [ ${#CHANGED_FILES[@]} -gt 0 ]; then
+    CHANGED_FILES_JSON=$(printf '%s\n' "${CHANGED_FILES[@]}" | jq -s .)
+fi
+
+SIGNATURE_CHANGES_JSON="[]"
+if [ ${#SIGNATURE_CHANGES[@]} -gt 0 ]; then
+    SIGNATURE_CHANGES_JSON=$(printf '%s\n' "${SIGNATURE_CHANGES[@]}" | jq -s .)
+fi
+
+# Merge deleted functions into signature_changes
+if [ ${#DELETED_SYMBOLS[@]} -gt 0 ]; then
+    DELETED_SYMBOLS_JSON=$(printf '%s\n' "${DELETED_SYMBOLS[@]}" | jq -s .)
+    SIGNATURE_CHANGES_JSON=$(echo "$SIGNATURE_CHANGES_JSON" "$DELETED_SYMBOLS_JSON" | jq -s 'add')
+fi
+
+jq -n \
+    --argjson pr_number "$PR_NUMBER" \
+    --arg title "$TITLE" \
+    --arg author "$AUTHOR" \
+    --arg base_branch "$BASE" \
+    --arg head_branch "$HEAD" \
+    --argjson changed_files "$CHANGED_FILES_JSON" \
+    --argjson signature_changes "$SIGNATURE_CHANGES_JSON" \
+    '{
+        pr_number: $pr_number,
+        title: $title,
+        author: $author,
+        base_branch: $base_branch,
+        head_branch: $head_branch,
+        changed_files: $changed_files,
+        signature_changes: $signature_changes
+    }' > "$OUTPUT_FILE"
+
+# Output summary
+FILE_COUNT=$(echo "$CHANGED_FILES_JSON" | jq 'length')
+SYMBOL_COUNT=$(echo "$CHANGED_FILES_JSON" | jq '[.[].new_symbols | length] | add // 0')
+SIG_COUNT=$(echo "$SIGNATURE_CHANGES_JSON" | jq 'length')
+
+DEL_COUNT=${#DELETED_SYMBOLS[@]}
+echo "Files: $FILE_COUNT | Symbols: $SYMBOL_COUNT | Signatures: $SIG_COUNT | Deleted functions: $DEL_COUNT"

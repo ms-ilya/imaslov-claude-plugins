@@ -1,9 +1,0 @@
-{
-  "name": "pr-review",
-  "description": "Multi-agent PR review for Swift codebases with resumable stages.",
-  "version": "1.0.0",
-  "author": {
-    "name": "Ilya"
-  },
-  "keywords": ["pr-review", "code-review", "swift", "multi-agent"]
-}

@@ -1,0 +1,9 @@
+{
+  "name": "root-cause-analysis",
+  "description": "Systematic root cause analysis using 5 Whys, fishbone diagrams, and structured RCA reports to identify underlying problems and prevent recurrence.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Ilya"
+  },
+  "keywords": ["rca", "root-cause", "debugging", "incident", "postmortem", "5-whys", "flaky-test", "ci-failure", "performance", "regression", "security"]
+}
