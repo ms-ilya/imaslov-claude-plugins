@@ -39,6 +39,12 @@
       "source": "./plugins/root-cause-analysis",
       "description": "Systematic root cause analysis using 5 Whys, fishbone diagrams, and structured RCA reports.",
       "version": "1.0.0"
+    },
+    {
+      "name": "humanizer",
+      "source": "./plugins/humanizer",
+      "description": "Remove AI writing patterns from text. Priority-tiered detection, statistical texture, voice anchoring, two-pass self-audit.",
+      "version": "1.0.0"
     }
   ]
 }

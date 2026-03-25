@@ -1,22 +1,22 @@
-# iOS Comprehensive Review Plugin
+# iOS comprehensive review plugin
 
-Multi-agent code review for iOS/Swift projects. Uses 5 specialized parallel agents across a 4-stage pipeline (can resume if interrupted) to check code quality, find duplicate code, detect breaking API changes, and flag design issues.
+Multi-agent code review for iOS/Swift projects. Five parallel agents run a 4-stage pipeline (resumable if interrupted) to check code quality, find duplicate code, detect breaking API changes, and flag design issues.
 
-**Key capabilities:**
+What it checks:
 - Per-file: force unwraps, memory leaks, threading, Swift Concurrency (`@Sendable`, actor isolation, continuations), unused code, naming
-- Cross-file: finds duplicate code, breaking API changes (including deleted functions), design violations, over-engineering
-- Test-aware: reports fewer warnings for test files (force unwraps, naming)
-- Resumable: if interrupted, picks up where it left off
+- Cross-file: duplicate code, breaking API changes (including deleted functions), design violations, over-engineering
+- Test-aware: fewer warnings for test files (force unwraps, naming)
+- Resumable: picks up where it left off if interrupted
 
-**When to use this vs `ios-quick-review`:** Use this plugin for large PRs and branch reviews where you need parallel analysis, cross-file checks (duplicates/breaking changes/design issues), and the ability to resume. Use `ios-quick-review` for smaller changes where detailed checks (performance, side effects, compliance) and scope confirmation matter more.
+**When to use this vs `ios-quick-review`:** This plugin targets large PRs and branch reviews requiring parallel analysis, cross-file checks (duplicates, breaking changes, design issues), and resumability. `ios-quick-review` fits smaller changes where detailed per-file checks (performance, side effects, compliance) and scope confirmation matter more.
 
 ## Installation
 
 Add to Claude Code plugins.
 
-## Commands & Skills
+## Commands and skills
 
-### Full Review (recommended — single command)
+### Full review (recommended; single command)
 
 ```
 /review-all <PR number>
@@ -24,7 +24,7 @@ Add to Claude Code plugins.
 /review-all --base main --branch feature
 ```
 
-This runs all 4 stages automatically: extract → analyze → cross-check → report.
+Runs all 4 stages automatically: extract, analyze, cross-check, report.
 
 | Command | What it does |
 |---------|--------------|
@@ -32,9 +32,9 @@ This runs all 4 stages automatically: extract → analyze → cross-check → re
 | `/review-all --base <branch>` | Review current branch against base |
 | `/review-all --base <branch> --branch <branch>` | Review a specific branch against base |
 
-### Stage-by-Stage Commands (for debugging, partial re-runs, or splitting across sessions)
+### Stage-by-stage commands (for debugging, partial re-runs, or splitting across sessions)
 
-Run individual stages when you want to split work across separate sessions or re-run a specific stage:
+Run individual stages to split work across sessions or re-run one stage:
 
 ```
 /review-extract <PR number>       # Stage 1: fetch diff and metadata
@@ -53,18 +53,18 @@ Run individual stages when you want to split work across separate sessions or re
 | `/review-report` | 4. Report | Aggregate findings into final markdown report |
 | `/review-cleanup` | Cleanup | Remove intermediate files, keep only the final report |
 
-Stages 2-4 need stage 1 to run first (they read from `.ios-review-temp/pr-context.json`). Each stage can resume — re-running it skips work that's already done. Run `/review-cleanup` after the report to remove temporary JSON files.
+Stages 2-4 depend on stage 1 (they read from `.ios-review-temp/pr-context.json`). Re-running a stage skips work already done. Run `/review-cleanup` after the report to remove temporary JSON files.
 
 ## Architecture
 
-5 specialized agents (parallelized within each stage):
+Five agents, parallelized within each stage:
 
 | Agent | Focus | Model |
 |-------|-------|-------|
 | `file-analyzer` | Per-file: style, unused code, safety, threading, Swift Concurrency | Sonnet |
 | `dry-analyzer` | Cross-file: duplicate function detection | Sonnet |
 | `breaking-analyzer` | Cross-file: breaking API changes + deleted functions + affected callers | Sonnet |
-| `solid-analyzer` | Cross-file: design principle violations, over-engineering check | Sonnet |
+| `solid-analyzer` | Cross-file: design principle violations, over-engineering | Sonnet |
 | `report-aggregator` | Combine all findings into a markdown report | Haiku |
 
 ## Output
@@ -74,36 +74,33 @@ Stages 2-4 need stage 1 to run first (they read from `.ios-review-temp/pr-contex
 
 ## Resumption
 
-If interrupted, re-run the same command to continue:
-- Analyze skips already-processed files
-- Cross-check skips if outputs exist
-- Report can be re-run safely
+If interrupted, re-run the same command to continue. The analyze stage skips files already processed, cross-check skips if outputs exist, and report can be re-run safely.
 
-## Git State & Prerequisites
+## Git state and prerequisites
 
-This plugin reviews **committed** changes only. Understanding how each mode interacts with your git state avoids confusion:
+This plugin only reviews **committed** changes. Each mode interacts with git state differently.
 
-### PR Mode (`/review-all <PR number>`)
+### PR mode (`/review-all <PR number>`)
 
-Fetches the diff from GitHub via `gh pr diff`. Works from **any** local branch — your local git state doesn't matter.
+Fetches the diff from GitHub via `gh pr diff`. Works from **any** local branch; local git state does not matter.
 
 **Requires:** `gh` CLI authenticated and the PR must exist in the current repo's remote.
 
-### Branch Mode (`/review-all --base <branch>`)
+### Branch mode (`/review-all --base <branch>`)
 
-Uses `git diff <base>...<head>` (three-dot diff) to compare the commits between two branches.
+Uses `git diff <base>...<head>` (three-dot diff) to compare commits between two branches.
 
 | Scenario | What happens |
 |----------|-------------|
-| Feature branch with commits ahead of `--base` | Works — reviews all committed changes |
-| `--base main --branch feature` from any branch | Works — explicitly targets the right branches |
-| On `main`, run `--base main` | **Empty diff** — comparing main to itself, 0 findings |
-| Feature branch with only uncommitted/staged changes | **Empty diff** — uncommitted changes are not included |
-| `--base` branch doesn't exist locally | **git error** — the base branch must be reachable |
+| Feature branch with commits ahead of `--base` | Works - reviews all committed changes |
+| `--base main --branch feature` from any branch | Works - explicitly targets the right branches |
+| On `main`, run `--base main` | **Empty diff** - comparing main to itself, 0 findings |
+| Feature branch with only uncommitted/staged changes | **Empty diff** - uncommitted changes are not included |
+| `--base` branch doesn't exist locally | **git error** - the base branch must be reachable |
 
-**Key point:** Branch mode compares **committed code only**, not your current unsaved changes. If you want to review uncommitted work, either commit it first or use `ios-quick-review` instead.
+Branch mode compares **committed code only**, not unsaved changes. To review uncommitted work, commit first or use `ios-quick-review` instead.
 
-### When to Use Which Plugin
+### When to use which plugin
 
 | Your situation | Use |
 |----------------|-----|
@@ -114,7 +111,7 @@ Uses `git diff <base>...<head>` (three-dot diff) to compare the commits between 
 
 ### Requirements
 
-- `jq` — JSON processing (`brew install jq`)
-- GitHub CLI (`gh`) authenticated — PR mode only
-- `git` — branch mode only
+- `jq` for JSON processing (`brew install jq`)
+- GitHub CLI (`gh`) authenticated - PR mode only
+- `git` - branch mode only
 - Swift files in diff

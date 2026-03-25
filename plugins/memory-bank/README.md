@@ -1,41 +1,41 @@
-# Memory Bank Plugin
+# Memory Bank plugin
 
-## The Problem
+## The problem
 
-AI agents and new developers waste time figuring out how features work from scratch. Wikis go stale. READMEs get outdated. Knowledge is scattered across git history, code comments, and people's heads. Every new session starts from zero.
+AI agents and new developers spend too much time figuring out how features work. Wikis go stale. READMEs get outdated. Knowledge lives in git history, code comments, and people's heads; every new session starts from zero.
 
-## The Solution
+## The solution
 
-An always-up-to-date documentation system that records **what is true right now** about your project, organized by feature. One command documents a feature — deep code analysis, structured output, and mandatory checks against actual source code.
+A documentation system that records what is true right now about a project, organized by feature. One command documents a feature through code analysis, structured output, and checks against actual source code.
 
-**Core idea: no made-up information.** Every file path, type name, and description of behavior is checked against the real codebase using Claude Code's built-in tools (Glob, Grep, Read) before being written to docs.
+No made-up information. Every file path, type name, and behavioral description is checked against the real codebase using Claude Code's built-in tools (Glob, Grep, Read) before anything is written.
 
-## What It Does
+## What it does
 
-The Memory Bank creates a structured `memory-bank/` folder at your project root with two layers:
+The Memory Bank creates a `memory-bank/` folder at the project root with two layers.
 
-**Root-level documentation** (project-wide):
-- **WIKI.md** — navigation hub and feature index (read this first)
-- **systemPatterns.md** — architecture, design patterns, conventions
-- **techContext.md** — tech stack, dependencies, build setup
-- **TROUBLESHOOTING.md** — project-wide known issues
+Root-level documentation covers the whole project:
 
-**Per-feature documentation** (one folder per feature):
-- **IMPLEMENTATION.md** — how the feature works, key files, data flow, dependencies
-- **ACTIVE_CONTEXT.md** — current state, in-progress work, known TODOs
-- **TROUBLESHOOTING.md** — feature-specific gotchas and known issues
-- **DECISIONS.md** — key technical decisions (ADR-style, manually curated via `/add-decision`)
+- **WIKI.md** - navigation hub and feature index
+- **systemPatterns.md** - architecture, design patterns, conventions
+- **techContext.md** - tech stack, dependencies, build setup
+- **TROUBLESHOOTING.md** - project-wide known issues
 
-## Commands & Skills
+Per-feature documentation lives in one folder per feature:
 
-This plugin provides 5 commands:
+- **IMPLEMENTATION.md** - how the feature works, key files, data flow, dependencies
+- **ACTIVE_CONTEXT.md** - current state, in-progress work, known TODOs
+- **TROUBLESHOOTING.md** - feature-specific gotchas and known issues
+- **DECISIONS.md** - technical decisions in ADR style, manually curated via `/add-decision`
 
-| Command | Trigger | What it does |
-|---------|---------|--------------|
-| `/init-memory-bank` | "create memory-bank", "initialize memory-bank" | Scans your project, detects language/framework, creates `memory-bank/` with root-level docs |
-| `/update-memory-bank <feature>` | "document feature X", "update memory-bank for X" | Discovers related files via Grep/Glob, performs deep analysis, generates 3 feature docs (IMPLEMENTATION, ACTIVE_CONTEXT, TROUBLESHOOTING), runs verification, updates root WIKI |
+## Usage
+
+| Skill | Trigger | What it does |
+|-------|---------|--------------|
+| `/init-memory-bank` | "create memory-bank", "initialize memory-bank" | Scans the project, detects language/framework, creates `memory-bank/` with root-level docs |
+| `/update-memory-bank <feature>` | "document feature X", "update memory-bank for X" | Finds related files via Grep/Glob, analyzes them, generates 3 feature docs (IMPLEMENTATION, ACTIVE_CONTEXT, TROUBLESHOOTING), runs verification, updates root WIKI |
 | `/update-memory-bank-system` | "refresh system docs", "rebuild wiki index" | Re-scans architecture and dependencies, rebuilds the WIKI index and root-level files |
-| `/add-decision <feature>: <desc>` | "add decision for X: ..." | Records a technical decision (ADR-style) in the feature's DECISIONS.md |
+| `/add-decision <feature>: <desc>` | "add decision for X: ..." | Records a technical decision (ADR style) in the feature's DECISIONS.md |
 | `/memory-bank` | "how does the memory bank work" | Shows Memory Bank structure, routes to the right sub-skill |
 
 ### Workflow
@@ -53,25 +53,25 @@ This plugin provides 5 commands:
 
 ### What happens when you document a feature
 
-1. Claude searches the codebase for all files related to the feature (multiple naming conventions: camelCase, PascalCase, snake_case, kebab-case)
-2. Shows discovered files and **asks for confirmation** before proceeding
-3. Reads files using a tiered strategy — full read for core files, targeted read for secondary files
-4. Generates (or updates) the 3 feature documentation files
-5. Runs a **mandatory verification pass** — every file path checked via Glob, every type name checked via Grep, behavioral claims traced via Read
-6. Flags unverifiable content with `⚠️ INFERRED` or removes it
-7. Updates the root WIKI.md and other root files
+1. Claude searches the codebase for all files related to the feature, trying camelCase, PascalCase, snake_case, and kebab-case variants.
+2. It shows discovered files and asks for confirmation before proceeding.
+3. Files are read using a tiered strategy: full read for core files, targeted read for secondary ones.
+4. The three feature documentation files are generated or updated.
+5. A verification pass runs next. Every file path is checked via Glob, every type name via Grep, and behavioral claims are traced via Read.
+6. Anything unverifiable is flagged with `⚠️ INFERRED` or removed.
+7. The root WIKI.md and other root files are updated.
 
-## Accuracy Verification
+## Accuracy verification
 
-Every Memory Bank update includes a mandatory check to make sure nothing is made up:
+Every update includes a check against fabrication:
 
-- **File paths** — every path in the docs is checked to actually exist on disk
-- **Type names** — every class/struct/protocol/enum is searched for in the source files
-- **Behavior descriptions** — descriptions are traced back to actual code to confirm they're correct
-- **Unverifiable content** — flagged with `⚠️ INFERRED` (with notes on what WAS verified) or removed entirely
-- **Verification summary** — shown after each file with pass/fail counts; must have ≤30% INFERRED rate
+- **File paths** - each path in the docs is confirmed to exist on disk
+- **Type names** - every class, struct, protocol, and enum is searched for in source files
+- **Behavior descriptions** - traced back to actual code
+- **Unverifiable content** - flagged with `⚠️ INFERRED` (with notes on what was verified) or removed
+- **Verification summary** - shown after each file with pass/fail counts; the threshold is 30% or fewer INFERRED entries
 
-## Claude Code Tools Used
+## Claude Code tools used
 
 | Tool | Purpose |
 |------|---------|
@@ -81,22 +81,15 @@ Every Memory Bank update includes a mandatory check to make sure nothing is made
 | **Write** | Create new documentation files |
 | **Edit** | Update existing documentation files |
 
-No Bash commands needed — all operations use Claude Code's built-in tools.
+No Bash commands are needed. All operations use Claude Code's built-in tools.
 
-## When to Use This Plugin
+## When to use this
 
-The Memory Bank is designed for projects where:
-- AI agents need fast, accurate information about features
-- New developers need to get up to speed quickly
-- You want documentation that stays up to date
-- You're tired of outdated wikis and stale READMEs
+The Memory Bank works well when AI agents need fast, accurate information about features or when new developers need to get up to speed. It also helps if existing wikis and READMEs keep going stale.
 
-**It's NOT:**
-- A changelog (use git)
-- A task tracker (use your issue tracker)
-- Auto-generated API docs (use DocC/Jazzy/TypeDoc for that)
+It is not a changelog (use git), a task tracker (use an issue tracker), or auto-generated API docs (use DocC/Jazzy/TypeDoc for those).
 
-## Output Structure
+## Output structure
 
 ```
 your-project/
@@ -116,15 +109,12 @@ your-project/
 
 ## Tips
 
-- **Run `/update-memory-bank <feature>` after significant changes** to keep docs current
-- **Run `/update-memory-bank-system` periodically** to keep root-level docs fresh
-- **Commit the `memory-bank/` folder** to your repo — it's meant to be shared
-- **DECISIONS.md is manually curated** — Claude won't auto-populate it; use `/add-decision` to record decisions explicitly
-- **The verification step takes extra time but prevents made-up information** — it's worth it
+- Run `/update-memory-bank <feature>` after significant changes to keep docs current.
+- Run `/update-memory-bank-system` periodically to refresh root-level docs.
+- Commit the `memory-bank/` folder to the repo. It is meant to be shared.
+- DECISIONS.md is manually curated; Claude will not auto-populate it. Use `/add-decision` to record decisions explicitly.
+- The verification step takes extra time but prevents fabricated information.
 
 ## Design
 
-- Works with any language — detects project type and adapts (Swift, TypeScript, Python, Rust, Go, Kotlin, Java)
-- Optimized for Swift/iOS/macOS projects with a dedicated reference file
-- Organized by feature for quick access
-- Current state only — no changelogs, no date-stamped entries
+Works with any language. It detects project type and adapts to Swift, TypeScript, Python, Rust, Go, Kotlin, and Java (with a dedicated reference file for Swift/iOS/macOS projects). Documentation is organized by feature for quick access and tracks current state only, with no changelogs or date-stamped entries.

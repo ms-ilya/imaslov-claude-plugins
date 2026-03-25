@@ -1,16 +1,16 @@
-# Multi-Agent Debate Plugin
+# Multi-agent debate plugin
 
-## The Problem
+## The problem
 
-When you ask one AI to "consider both sides", it tends to agree with itself. All the "perspectives" share the same context, so they end up saying the same thing in different words. You never get real disagreement — just the illusion of it.
+When one AI is asked to "consider both sides," it tends to agree with itself. All the "perspectives" share the same context, so they converge on the same conclusion in different words. There is no real disagreement.
 
-## The Solution
+## The solution
 
-Launch **separate AI agents** that each get their own instructions, their own point of view, and their own biases. They can't see each other's instructions, so they actually disagree for real.
+Separate AI agents each receive their own instructions, point of view, and biases. They cannot see each other's instructions, so they disagree for real.
 
-**Core idea: productive conflict.** Agents are set up to challenge each other, attack weak points, and admit when the other side is right. A neutral Judge then picks the best reasoning and delivers a final verdict.
+The core idea is productive conflict. Agents challenge each other, attack weak points, and concede when the other side is right. A neutral Judge then picks the best reasoning and delivers a final verdict.
 
-## What It Does
+## What it does
 
 The debate runs through structured rounds, each dispatched as parallel Agent tool calls:
 
@@ -23,21 +23,21 @@ Step 4: Final Judgment      →  Claude steps into Judge role, synthesizes verdi
 Step 5: Post-Debate Options →  Go deeper, challenge, add agent, or export
 ```
 
-### Agent Design
+### Agent design
 
-Each debate gets **2-6 custom agents** (typically 3-5) chosen specifically for the topic — no generic "Optimist/Pessimist" panels. Agents are built using a **hybrid system**: 10 built-in thinking styles give agents deeper personalities (how they think, how they argue, what they tend to miss), while fully custom agents can be created from scratch when no built-in style fits.
+Each debate gets 2-6 custom agents (typically 3-5), chosen for the topic. There are no generic "Optimist/Pessimist" panels. Agents are built using a hybrid system: 10 built-in thinking styles give them deeper personalities (how they think, how they argue, what they tend to miss), while fully custom agents can be created from scratch when no built-in style fits.
 
 Every agent has:
 
-- **Name & Role** — Domain-specific identity (e.g., "The Pragmatist — Senior Engineering Lead")
-- **Lens** — What they optimize for (e.g., delivery speed, team morale, debt reduction)
-- **Core assumption** — The foundational belief driving their position
-- **Blind spot** — What they undervalue (stated honestly for better cross-examination)
-- **Archetype** — *(Optional)* A built-in thinking style that shapes how the agent reasons and argues. Agents without a matching style are created from scratch.
+- **Name and role** - a domain-specific identity (e.g., "The Pragmatist, Senior Engineering Lead")
+- **Lens** - what they optimize for (e.g., delivery speed, team morale, debt reduction)
+- **Core assumption** - the foundational belief driving their position
+- **Blind spot** - what they undervalue, stated honestly for better cross-examination
+- **Archetype** - *(optional)* a built-in thinking style that shapes how the agent reasons and argues; agents without a matching style are created from scratch
 
-The agent panel is presented to you for review before the debate starts — you can swap agents or adjust.
+The agent panel is presented for review before the debate starts. Agents can be swapped or adjusted.
 
-### Thinking Styles
+### Thinking styles
 
 Ten built-in thinking styles give agents distinct personalities and reasoning patterns:
 
@@ -54,47 +54,47 @@ Ten built-in thinking styles give agents distinct personalities and reasoning pa
 | Bias Archaeologist | Who is excluded by the defaults? | Inclusion, global audiences |
 | Choice Architect | People follow defaults, not reason. | Behavioral design, onboarding |
 
-Thinking styles add depth but never replace custom agents. The system only assigns a style when it genuinely fits the topic, and never uses the same style twice in one debate.
+Thinking styles add depth but never replace custom agents. The system only assigns a style when it genuinely fits the topic and never uses the same style twice in one debate.
 
-### Debate Rounds
+### Debate rounds
 
-**Round 1 — Opening Positions:** Each agent independently describes the problem, states a clear position that can be proven wrong, and presents their strongest argument.
+**Round 1, opening positions:** Each agent independently describes the problem, states a clear position that can be proven wrong, and presents their strongest argument.
 
-**Round 2 — Cross-Examination:** Each agent receives all other agents' opening positions and must attack each opponent's weakest claim, find edge cases, and expose hidden costs. "I generally agree but..." is banned.
+**Round 2, cross-examination:** Each agent receives all other agents' opening positions and must attack each opponent's weakest claim, find edge cases, and expose hidden costs. "I generally agree but..." is banned.
 
-**Round 3 — Rebuttals:** Each agent receives ONLY the critiques directed at them (not all cross-examination). Must concede valid points honestly or explain specifically why critiques don't land, then defend with NEW reasoning.
+**Round 3, rebuttals:** Each agent receives only the critiques directed at them (not all cross-examination). They must concede valid points honestly or explain specifically why critiques miss the mark, then defend with new reasoning.
 
-**Quick analysis mode** (2 rounds) is available for simpler tradeoff questions — skips the rebuttal round.
+Quick analysis mode (2 rounds) is available for simpler tradeoff questions; it skips the rebuttal round.
 
-### Judge Verdict
+### Judge verdict
 
 The final verdict includes:
 
-- **Synthesis** — Where agents agreed and where they genuinely disagreed
-- **Verdict** — Clear recommendation with confidence level (High/Moderate/Low) and conditions that must hold true
-- **Dissent Log** — Minority opinions worth keeping, conditions that would change the verdict, and questions that need more data
+- **Synthesis** - where agents agreed and where they genuinely disagreed
+- **Verdict** - a clear recommendation with confidence level (High/Moderate/Low) and conditions that must hold true
+- **Dissent log** - minority opinions worth keeping, conditions that would change the verdict, and questions that need more data
 
-### Post-Debate Options
+### Post-debate options
 
-After the verdict, you can:
+After the verdict:
 
-1. **"Go deeper"** — Spawn agents again on unresolved tensions from the Dissent Log
-2. **"Challenge the verdict"** — Introduce a new constraint; all agents respond in a mini-round
-3. **"Add an agent"** — Define a new perspective; existing agents cross-examine the newcomer
-4. **"Export"** — Write a clean summary to `debate-[topic-slug].md` via the Write tool
+1. **"Go deeper"** - Spawn agents again on unresolved tensions from the Dissent Log
+2. **"Challenge the verdict"** - Introduce a new constraint; all agents respond in a mini-round
+3. **"Add an agent"** - Define a new perspective; existing agents cross-examine the newcomer
+4. **"Export"** - Write a clean summary to `debate-[topic-slug].md` via the Write tool
 
-## Skills & Agents
+## Skills and agents
 
 This plugin provides:
 
 | Component | Name | Purpose |
 |-----------|------|---------|
-| **Skill** | `/multi-agent-debate` | Orchestrator workflow — assembles panels, dispatches rounds, synthesizes verdicts |
-| **Agent** | `debate-agent` | Debate participant subagent — tool-restricted (`maxTurns: 1`, no Read/Write/Bash) for text-only arguments |
+| **Skill** | `/multi-agent-debate` | Orchestrator workflow: assembles panels, dispatches rounds, synthesizes verdicts |
+| **Agent** | `debate-agent` | Debate participant subagent, tool-restricted (`maxTurns: 1`, no Read/Write/Bash) for text-only arguments |
 
 Trigger with: `/multi-agent-debate <issue or decision to debate>`
 
-Also triggers automatically on: "debate", "red team", "devil's advocate", "analyze from all angles", "stress-test", "argue both sides", "what am I missing", "challenge my thinking", "poke holes in this"
+It also triggers automatically on: "debate", "red team", "devil's advocate", "analyze from all angles", "stress-test", "argue both sides", "what am I missing", "challenge my thinking", "poke holes in this"
 
 ### Examples
 
@@ -107,15 +107,15 @@ Also triggers automatically on: "debate", "red team", "devil's advocate", "analy
 | "Stress-test this idea" | Edge cases and hidden costs surfaced |
 | "Quick take on Python vs Rust for this" | 2-round quick analysis mode |
 
-## Claude Code Tools Used
+## Claude Code tools used
 
 | Tool | Purpose |
 |------|---------|
-| **Agent** | Spawn independent parallel `debate-agent` subagents for each debate participant — genuine parallelism with separate context |
+| **Agent** | Spawn independent parallel `debate-agent` subagents for each debate participant; genuine parallelism with separate context |
 | **Read** | Read attached files, reference documents, and skill reference files |
 | **Write** | Export debate transcript to a markdown file |
 
-Debate agents can only produce text (no file access, no commands) — this is enforced at the system level. Only the main orchestrator (Claude) uses tools.
+Debate agents can only produce text (no file access, no commands). This is enforced at the system level. Only the main orchestrator (Claude) uses tools.
 
 ## Architecture
 
@@ -140,29 +140,29 @@ Debate agents can only produce text (no file access, no commands) — this is en
      └────────┘ └────────┘ └────────┘
 ```
 
-### How Thinking Styles Work
+### How thinking styles work
 
-The system reads `references/archetypes.md` once when building agents. Agents that get a thinking style receive two extra instructions — how to think and how to argue — that make their reasoning genuinely different from other agents. Agents without a matching style use a fully custom profile instead. Both types participate in the debate the same way.
+The system reads `references/archetypes.md` once when building agents. Agents that receive a thinking style get two extra instructions: how to think and how to argue. This makes their reasoning genuinely different from other agents. Those without a matching style use a fully custom profile instead. Both types participate in the debate the same way.
 
-## Quality Guardrails
+## Quality guardrails
 
-- **Agreement detection** — After Round 1, if 2+ agents reach the same conclusion, the panel is reshuffled and the agreeing agent re-runs Round 1 (max 1 retry)
-- **No made-up facts** — Agents must never invent examples, company names, or statistics; guesses must be clearly labeled
-- **Judge must quote directly** — The Judge must use exact quotes from agents, not summaries from memory
-- **No early agreement** — If all agents agree too soon, the Judge flags it
-- **Style clash check** — After building the panel, the system checks that at least two agents have thinking styles that naturally oppose each other
-- **Fallback** — If the Agent tool is unavailable, runs a simpler version (one model, one at a time) and tells you about the limitation
+- **Agreement detection** - After Round 1, if two or more agents reach the same conclusion, the panel is reshuffled and the agreeing agent re-runs Round 1 (max 1 retry)
+- **No made-up facts** - Agents must never invent examples, company names, or statistics; guesses must be clearly labeled
+- **Judge must quote directly** - The Judge uses exact quotes from agents, not summaries from memory
+- **No early agreement** - If all agents agree too soon, the Judge flags it
+- **Style clash check** - After building the panel, the system verifies that at least two agents have thinking styles that naturally oppose each other
+- **Fallback** - If the Agent tool is unavailable, a simpler version runs (one model, one at a time) and reports the limitation
 
 ## Requirements
 
 - Claude Code with the Agent tool available (for spawning parallel subagents)
-- No API keys, external services, or dependencies needed — uses Claude Code's built-in Agent tool
+- No API keys, external services, or dependencies needed
 
 ## Design
 
-- Agents are truly independent — separate `debate-agent` subagents with no tools, `maxTurns: 1`, no shared context until cross-examination
+- Agents are truly independent: separate `debate-agent` subagents with no tools, `maxTurns: 1`, no shared context until cross-examination
 - Minimum 3 agents per debate to avoid simple "for vs against" framing
-- Full debate (3 rounds) or quick analysis (2 rounds) mode
-- Organized cross-examination: each agent gets a dedicated section per opponent for clean responses
-- Keeps responses short: 200-350 words per agent per round
+- Full debate (3 rounds) or quick analysis (2 rounds)
+- Organized cross-examination where each agent gets a dedicated section per opponent
+- Responses kept short, 200-350 words per agent per round
 - Handles tricky cases: yes/no questions, topics that are too broad, already-settled facts, personal decisions
