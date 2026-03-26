@@ -357,7 +357,7 @@ Fix everything before Pass 2.
 
 - Three consecutive sentences the same length? Break one.
 - Paragraph ends with a neat one-liner? Vary the ending.
-- Any em dash (—)? Always replace with regular hyphen ( - ), comma, or restructure. No exceptions - the typographic em dash character is an AI tell in all contexts and all languages.
+- Any em dash (—)? Always replace with regular hyphen ( - ), comma, or restructure. No exceptions. This applies to ALL languages, including Russian, German, and other languages where em dashes are grammatically standard. The AI tell is not the dash existing in the language - it is the abnormal frequency and catch-all usage that AI produces. Do NOT rationalize a "language exception" to skip this rule.
 - Metaphor being explained? Trust the reader.
 - "Additionally," "However," "Moreover" starting a sentence? Remove.
 - Rule of three anywhere? Make it two or four.

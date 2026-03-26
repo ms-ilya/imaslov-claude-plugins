@@ -152,6 +152,8 @@ These matter but are more situational.
 
 AI uses em dashes as a universal connector. Always replace the em dash character (—) with a regular hyphen with spaces ( - ), comma, period, or parentheses. No exceptions - the typographic em dash is an AI fingerprint regardless of language, formality, or content type.
 
+**Non-English languages (Russian, German, etc.):** Some languages use em dashes as standard grammar (e.g., Russian "тире" replaces copulas: "Москва — столица России"). This does NOT create an exception. AI overuses dashes in these languages at rates far above human norms, turning them into a catch-all connector just like in English. Replace with regular hyphens ( - ) in every language. Do not rationalize a "language exception" to skip this rule.
+
 **Before:** "The tool — which launched last year — handles deployment — including rollbacks — and monitoring — both real-time and historical."
 **After:** "The tool launched last year. It handles deployment (including rollbacks) and monitoring, both real-time and historical."
 
