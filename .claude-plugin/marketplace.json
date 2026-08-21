@@ -45,6 +45,12 @@
       "source": "./plugins/humanizer",
       "description": "Remove AI writing patterns from text. Priority-tiered detection, statistical texture, voice anchoring, two-pass self-audit.",
       "version": "1.0.0"
+    },
+    {
+      "name": "feature-spec",
+      "source": "./plugins/feature-spec",
+      "description": "Bounded, resumable requirements interview that ends in a critic-verified spec. Commands: feature-spec, grill, write.",
+      "version": "1.0.0"
     }
   ]
 }

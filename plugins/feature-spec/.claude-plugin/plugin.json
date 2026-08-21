@@ -1,0 +1,9 @@
+{
+  "name": "feature-spec",
+  "description": "Bounded, resumable requirements interview that ends in a critic-verified spec. Coverage-tracked rounds, strategy selection, glossary and ADRs, Swift-aware.",
+  "version": "1.0.0",
+  "author": {
+    "name": "Ilya"
+  },
+  "keywords": ["spec", "planning", "requirements", "interview", "adr", "glossary", "swift", "ios"]
+}
