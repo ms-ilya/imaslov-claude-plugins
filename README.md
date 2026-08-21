@@ -70,6 +70,39 @@ Individual stage commands for debugging, partial re-runs, or splitting across se
 
 ---
 
+### Planning and specification
+
+#### [feature-spec](./plugins/feature-spec)
+
+Bounded, resumable requirements interview that ends in a critic-verified spec — and deliberately stops there. No implementation, no task breakdown.
+
+- Grounds itself in the repo first: read-only agents answer specific questions so you are never asked what the code already says
+- Capped interview rounds tracked against a fixed 10-category coverage taxonomy, re-scored and printed every round
+- Compaction-proof: every answer is written to a design record **with its reasoning** the moment it is given, so drafting reads the record rather than the conversation
+- Enforces the rules your repo already wrote down (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/*.md`) and ships none of its own; a justified deviation is recorded with the rule quoted verbatim
+- Every requirement and success criterion carries a source tag naming where in the record it came from — anything untraceable is cut or marked, never asserted
+- Proposes competing strategies and records the chosen one *and the rejected ones*, with reasons
+- Builds a project glossary during the interview and promotes hard-to-reverse decisions to ADRs via a three-part test
+- An independent critic scores the draft before anything is written, and cannot rubber-stamp: zero findings requires a list of what it checked, cited verbatim
+- Detachable Swift/iOS layer that loads only on stack detection
+- Ships deterministic validators that check the plugin's **own output** — the design record after every round, the draft before the critic — rather than trusting prose rules, and that refuse to report a pass they did not actually establish
+
+**Commands:**
+
+| Command | What it does |
+|---------|--------------|
+| `/feature-spec <idea>` | Full pipeline: ground, interview, strategy, draft, critique, write |
+| `/feature-spec-grill <idea>` | Interview stages only — **writes the design record, glossary and ADRs, but no spec** |
+| `/feature-spec-write <slug>` | Draft, critique and write from an existing design record, in a fresh session |
+
+**Flags:** `--fast` (one round, ~5 min, no critic) · `--deep` (up to 5 rounds, critic panel) · `--resume` · `--scope <path>`
+
+**Produces:** `docs/specs/<date>-<slug>/{spec.md, tree.md, critique.md}`, `docs/specs/GLOSSARY.md`, and ADRs in `docs/adr/`
+
+**Works with:** any project; sharpest on iOS/Swift
+
+---
+
 ### Knowledge and context
 
 Plugins for saving project knowledge and debugging notes so they persist across sessions.
@@ -277,6 +310,7 @@ The same operations are available as CLI commands:
 | `multi-agent-debate` | `/plugin install multi-agent-debate@imaslov-claude-plugins` |
 | `root-cause-analysis` | `/plugin install root-cause-analysis@imaslov-claude-plugins` |
 | `humanizer` | `/plugin install humanizer@imaslov-claude-plugins` |
+| `feature-spec` | `/plugin install feature-spec@imaslov-claude-plugins` |
 
 ### Managing plugins
 
