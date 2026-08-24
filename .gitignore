@@ -1,6 +1,13 @@
 # Plugin temp files
 *-temp/
 
+# Python bytecode (scripts/lib in feature-spec)
+__pycache__/
+*.py[cod]
+
+# Eval fixtures are sample projects, not repositories
+plugins/*/skills/*/evals/files/**/.git/
+
 # OS files
 .DS_Store
 Thumbs.db

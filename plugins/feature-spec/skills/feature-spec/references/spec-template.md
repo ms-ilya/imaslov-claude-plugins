@@ -103,6 +103,11 @@ FR-001  Given <state>, when <action>, then <observable result>.
 A criterion whose number the interview never settled is **not** written with an
 invented number. It is written as an open question.
 
+**Write the number as digits.** `in all 3 cases`, not `in all three cases`. A
+criterion is checked by comparing against a value, and a reader who has to parse
+English to find that value will eventually parse it differently. `check-spec.sh`
+warns on a criterion that names no digit.
+
 ## Source tags — every FR, SC and scenario
 
 Every requirement, success criterion and acceptance scenario carries a tag naming
@@ -117,6 +122,12 @@ Valid sources, and nothing else:
 |---|---|
 | `← industry standard` | `← Settled Q4 (r2)` |
 | `← discussed in the interview` — no line to check | `← Grounding fact 2` |
+| `← Deferred Q8` — a deferral is not a decision | `← Settled Q2 (r1), Grounding fact 7` |
+
+**A tag may name several sources, comma separated**, and every one of them is
+resolved — a citation in second position is a citation. The plural reads
+naturally where it should: `← Grounding facts 15, 41` and `← Settled Q2, Q9` each
+name two, the second borrowing its noun from the first.
 
 **A statement with no valid source is cut, or kept and marked
 `[NEEDS CLARIFICATION: not decided in the interview]`. It is never asserted.**

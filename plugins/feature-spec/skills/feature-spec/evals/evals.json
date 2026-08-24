@@ -1,0 +1,144 @@
+{
+  "skill_name": "feature-spec",
+  "notes": [
+    "Lives inside the skill folder because that is where skill-creator looks for it. It is not part of the canonical SKILL.md / scripts / references / assets layout and is never loaded at runtime.",
+    "No fixture files ship with this suite, deliberately. A spec plugin is judged on how it interviews about a REAL codebase, and four invented sample projects would only prove it can interview about four invented sample projects. Each case states the repo it needs; the operator points it at a real one.",
+    "Where a case needs a feature-spec artifact rather than a codebase, `scripts/test-checks.sh` already builds one from the shipped skeleton in `references/tree-format.md` \u2014 so the fixture cannot drift from the documented format. Generate rather than store.",
+    "Cases 1 and 2 are refusals: the skill passes by NOT producing a spec. First on purpose \u2014 a tool that cannot decline is a tool that always bills.",
+    "The token and duration figures the harness records are the point of this file. The README's budget targets are engineering estimates, and this is what replaces them with measurements.",
+    "Cases 7-9 cover /feature-spec-plan. Case 8 is the one that matters: the backwards coverage check \u2014 that no requirement was silently dropped \u2014 is the plugin's central claim about the plan stage, and it is the failure a plan that reads complete will pass every eyeball test on.",
+    "Case 9 is the second-visit path. A plan is written once and amended repeatedly, and `extend` preserving the statuses of work already done is the property a single manual try never exercises."
+  ],
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "/feature-spec make the app better",
+      "repo": "any",
+      "expected_output": "A refusal. The idea is too vague to slug, so the skill asks one clarifying question and stops without creating a directory or writing any file.",
+      "assertions": [
+        "No directory was created under docs/specs/",
+        "No tree.md, spec.md or GLOSSARY.md was written anywhere",
+        "The response asks at most one clarifying question",
+        "The response does not render an AskUserQuestion picker of interview questions",
+        "The response does not begin a numbered interview round"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "/feature-spec change the submit button label from 'Send' to 'Submit'",
+      "repo": "any repo containing a UI",
+      "expected_output": "A refusal on the grounds that there is nothing here a spec would decide, with --fast offered if the user disagrees.",
+      "assertions": [
+        "No directory was created under docs/specs/",
+        "The response states that this does not need a spec, or that there is no decision in it",
+        "The response mentions --fast as the option if the user disagrees",
+        "No interview round was rendered"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "/feature-spec --fast <a small, genuinely wanted change in this repo>",
+      "repo": "any real repo the operator knows well, so they can judge whether the questions were worth asking",
+      "expected_output": "One round, no picker, a spec written with the critic skipped. Every requirement carries a source tag that resolves against the record.",
+      "assertions": [
+        "Exactly one interview round was rendered",
+        "No AskUserQuestion picker was used (fast mode is Channel B only)",
+        "Every question carried a pre-accepted recommendation",
+        "check-tree.sh exits 0 on the resulting tree.md",
+        "check-spec.sh --tree <tree.md> exits 0 on the resulting spec.md",
+        "No critique.md was written, and the run said the critic was skipped",
+        "spec.draft.md does not exist after the run",
+        "The final report states rounds, questions, fact-finder dispatches and references loaded as counts",
+        "The final report states no token count, context percentage or elapsed cost"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "/feature-spec <a real feature you would actually want spec'd>",
+      "repo": "a real Swift, TypeScript or Python repo \u2014 whichever stack layer you want to exercise. A monorepo is the more interesting test: the stack must be detected from the FEATURE'S scope, not the repo's overall shape.",
+      "expected_output": "A default-mode run: the right stack layer loaded before fact-finders are dispatched, capped rounds, a coverage table every round, a critic pass, and a spec whose tags all resolve.",
+      "assertions": [
+        "The stack layer loaded matches the feature's scope, not merely the repo's most common language",
+        "That layer's two references were loaded before any fact-finder was dispatched",
+        "All fact-finders were dispatched in a single message",
+        "No more than 5 questions were asked in any one round",
+        "No more than 3 rounds ran, unless the 4th-round unlock was announced with its three conditions",
+        "A coverage table with all ten taxonomy category names verbatim was printed every round",
+        "Any Clear* entry is written as 'Clear* (n deferred)' with its count",
+        "At least one question was collapsed by a grounding fact rather than asked",
+        "check-tree.sh and check-spec.sh both exit 0 on the final artifacts",
+        "critique.md names a verdict of ship or fix-first with a calibrated confidence"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "/feature-spec-write --from-tree <path to a corrupted design record>",
+      "repo": "any. Generate the record with: bash scripts/test-checks.sh (see its phase1/truncated fixtures), or take a valid tree.md and delete its ## Sessions section and rename one coverage category.",
+      "expected_output": "The skill reports which section failed and offers the doctor's repair, rather than drafting from a half-understood record.",
+      "assertions": [
+        "No spec.md was written",
+        "The response names the specific section that failed to parse",
+        "The response either ran check-tree.sh --doctor or reproduced its repair output",
+        "The response offers a route forward \u2014 repair or archive-and-restart",
+        "The response does not guess at the missing content"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "/feature-spec <slug of a spec written by case 3 or 4> \u2014 <a changed decision>",
+      "repo": "the same repo as the run that produced the spec",
+      "expected_output": "An amendment. The existing spec is offered amend/restart/read-only rather than overwritten; the superseded answer is struck through, not deleted; and no identifier is renumbered.",
+      "assertions": [
+        "The user was offered amend, restart and read-only before anything was written",
+        "The previous tree.md content is still present \u2014 the superseded answer appears struck through, not removed",
+        "A new session line was appended to ## Sessions rather than the section being rewritten",
+        "check-spec.sh was run with --prev pointing at the previous spec.md",
+        "No FR or SC identifier changed its meaning between the old and new spec",
+        "Any withdrawn requirement remains in place marked (withdrawn) rather than being deleted",
+        "The spec directory was not re-dated"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "/feature-spec-plan <slug of a spec whose requirements are all deferred, i.e. every FR carries a [NEEDS CLARIFICATION] marker>",
+      "repo": "any, with a feature-spec spec directory",
+      "expected_output": "A plan is still written, every task Blocked, and the report leads with the markers to resolve first. It does not silently pick an answer for any marker, and it does not refuse.",
+      "assertions": [
+        "plan/plan.md and at least one plan/tasks/T0N.md were written",
+        "Every task file carries Status: Blocked and a Blocked by: line",
+        "Every [NEEDS CLARIFICATION] marker in spec.md appears in plan.md's ## Open questions carried from the spec",
+        "No action item resolves a marker by choosing one branch of it",
+        "The report names the markers to resolve before work starts"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "/feature-spec-plan <slug of the spec written by case 3 or 4>",
+      "repo": "the same repo that spec was written against",
+      "expected_output": "A plan whose tasks cover every FR and SC in the spec, with done-conditions quoted from the spec rather than restated, and every implementation choice recorded as an assumption with its reversal cost.",
+      "assertions": [
+        "Every FR and SC identifier in spec.md is either named in some task's Covers: line or listed under ## Not planned with a reason",
+        "No task's Covers: line names an identifier the spec does not define",
+        "Every line under a task's ## Done when appears verbatim in spec.md",
+        "plan.md's ## Task graph table agrees with the Status, Covers and Depends on of every task file",
+        "## Plan assumptions is non-empty, and every entry states a reversal cost",
+        "The first milestone contains only tasks covering P1 requirements",
+        "No task file states an estimate in hours, days or story points",
+        "check-plan.sh exits 0 against the written plan"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "/feature-spec-plan <the same slug as case 8, after amending the spec to add one requirement, and after marking T01 Done by hand>",
+      "repo": "the same repo",
+      "expected_output": "Three choices \u2014 replan, extend, read-only \u2014 and no silent overwrite. On extend, T01 keeps its Done status and a new task covers the added requirement.",
+      "assertions": [
+        "The response offers replan, extend and read-only, and writes nothing before a choice is made",
+        "On extend, T01 still reads Status: Done",
+        "On extend, no existing task id was renumbered or reused",
+        "On extend, the added requirement is covered by a task that did not exist before",
+        "plan.md's task graph was regenerated rather than hand-edited"
+      ]
+    }
+  ]
+}

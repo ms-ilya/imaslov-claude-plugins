@@ -12,9 +12,10 @@ where prompt-driven tooling gets embarrassing.
 | Idea too vague to slug | Ask one clarifying question, then stop. Do not open a 3-round interview on an unformed idea. |
 | User contradicts an earlier answer | Show both, ask which holds, record the change with its reason. Never silently overwrite. |
 | User abandons mid-round | `tree.md` already holds every prior answer (R1). `--resume` returns to the same frontier. |
-| `tree.md` unparseable | Report which section failed and stop. Offer restart. Never guess at a corrupted design record. |
+| `tree.md` unparseable | Run `check-tree.sh <tree.md> --doctor`, which names every broken section and prints its repair straight from the shipped skeleton. Apply what it prints, re-check, and continue. If it is beyond repair, archive to `tree.archived-<date>.md` and restart. Never guess at a corrupted design record. |
 | Critic still blocking after two passes | Write anyway. `critique.md` carries the unresolved findings and Phase 7 says so. |
-| Non-swift repo | The stack layer never loads. Generic questions, and no apology for their absence. |
+| No stack layer matches | Layers ship for Swift, TypeScript and Python. On anything else none loads: generic questions, and no apology for their absence. |
+| Scope spans two stacks | Ask which side the feature lives on, once, before dispatching. One question saves a round aimed at the wrong stack. Never load two layers. |
 | `AskUserQuestion` unavailable | The whole round renders as one numbered markdown block. Caps and content rules unchanged. Never fail on it. |
 | User picks **"Other"** | Record the free text verbatim as the decision. A new question it raises joins the frontier for the **next** round. |
 | Existing spec dir from another tool | Adopt the location, write only your own `<date>-<slug>/` inside it, never touch a sibling directory (R17). |

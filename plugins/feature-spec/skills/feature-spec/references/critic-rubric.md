@@ -128,6 +128,17 @@ one re-run is allowed, so the second pass must be able to report per finding:
 `B1 fixed · B2 not fixed · B3 new`. Without IDs that reconciliation is prose, and
 the critique file cannot say precisely what shipped unresolved.
 
+**Severity is the section, not the prefix.** A finding is blocking because it
+sits under `BLOCKING`, and `check-critique.sh` reads it that way — so the id is
+free to be whatever keeps it unique. Put every finding under one of the two
+headings; one written outside them cannot be classified, and a finding nobody
+can classify ships as resolved.
+
+**Running as one of three parallel lenses?** Your packet names the prefix to use
+— `BC`/`AC` for completeness, `BS`/`AS` for consistency, `BP`/`AP` for
+principles. Three lenses sharing one numbering means two different findings
+called `B1`, and only one of them can be reported on.
+
 **`FIX:` exists for the same reason.** There is one attempt. A finding that does
 not say what would clear it wastes it.
 

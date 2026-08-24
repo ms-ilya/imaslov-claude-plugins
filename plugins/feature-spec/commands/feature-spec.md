@@ -25,6 +25,8 @@ Usage:
 - `/feature-spec <idea> --deep` — up to 5 rounds, strategy always, critic panel
 - `/feature-spec <slug> --resume` — continue an interview that never finished
 - `/feature-spec <idea> --scope <path>` — confine grounding to one directory
+- `/feature-spec --prior-art <doc.md>` — the input is an existing analysis
+  document; Phase 1's job becomes verifying its claims against the code
 
 **If no arguments are provided:** list the existing spec slugs, ask for a feature
 idea, and stop. Do not start an interview on an unformed idea.

@@ -23,6 +23,8 @@ Usage:
 - `/feature-spec-grill <idea> --fast|--deep` — depth modes, as the full command
 - `/feature-spec-grill <slug> --resume` — continue an unfinished interview
 - `/feature-spec-grill <idea> --scope <path>` — confine grounding
+- `/feature-spec-grill --prior-art <doc.md>` — the input is an existing analysis
+  document; Phase 1's job becomes verifying its claims against the code
 
 ## This command writes files
 

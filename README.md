@@ -74,7 +74,7 @@ Individual stage commands for debugging, partial re-runs, or splitting across se
 
 #### [feature-spec](./plugins/feature-spec)
 
-Bounded, resumable requirements interview that ends in a critic-verified spec — and deliberately stops there. No implementation, no task breakdown.
+Bounded, resumable requirements interview that ends in a critic-verified spec, and a separate command that turns that spec into a checked implementation plan. The interview stops at the spec and never learns a plan can follow it — a spec written as a gate on the way to code gets optimised to be *passed* rather than to be good.
 
 - Grounds itself in the repo first: read-only agents answer specific questions so you are never asked what the code already says
 - Capped interview rounds tracked against a fixed 10-category coverage taxonomy, re-scored and printed every round
@@ -85,7 +85,10 @@ Bounded, resumable requirements interview that ends in a critic-verified spec �
 - Builds a project glossary during the interview and promotes hard-to-reverse decisions to ADRs via a three-part test
 - An independent critic scores the draft before anything is written, and cannot rubber-stamp: zero findings requires a list of what it checked, cited verbatim
 - Detachable Swift/iOS layer that loads only on stack detection
-- Ships deterministic validators that check the plugin's **own output** — the design record after every round, the draft before the critic — rather than trusting prose rules, and that refuse to report a pass they did not actually establish
+- Ships deterministic validators that check the plugin's **own output** — the design record after every round, the draft before the critic, the plan against its spec — rather than trusting prose rules, and that refuse to report a pass they did not actually establish
+- The plan stage proves the join to the spec **in both directions**: no task may cite a requirement the spec does not define, and no requirement may be silently dropped — every one is covered by a task or listed as deliberately not planned, with a reason
+- Task done-conditions are the spec's own acceptance scenarios, quoted and looked up rather than restated; milestones come from the spec's P1/P2/P3 priorities, so the first one is a shippable slice by construction
+- Every implementation decision the spec did not settle is recorded as an assumption with its reversal cost — the spec names no type or library by design, so those choices are new and have to read as new
 
 **Commands:**
 
@@ -94,10 +97,15 @@ Bounded, resumable requirements interview that ends in a critic-verified spec �
 | `/feature-spec <idea>` | Full pipeline: ground, interview, strategy, draft, critique, write |
 | `/feature-spec-grill <idea>` | Interview stages only — **writes the design record, glossary and ADRs, but no spec** |
 | `/feature-spec-write <slug>` | Draft, critique and write from an existing design record, in a fresh session |
+| `/feature-spec-plan <slug>` | Turn a finished spec into ordered tasks with milestones, dependencies and quoted done-conditions — then have a critic score the plan |
 
-**Flags:** `--fast` (one round, ~5 min, no critic) · `--deep` (up to 5 rounds, critic panel) · `--resume` · `--scope <path>`
+**Interview flags** (`/feature-spec`, `/feature-spec-grill`): `--fast` (one round, ~5 min, no critic) · `--deep` (up to 5 rounds, critic panel) · `--resume` · `--scope <path>` · `--prior-art <doc.md>` (the input is an existing analysis document, and Phase 1's job becomes falsifying its claims against the code)
 
-**Produces:** `docs/specs/<date>-<slug>/{spec.md, tree.md, critique.md}`, `docs/specs/GLOSSARY.md`, and ADRs in `docs/adr/`
+**Plan flags** (`/feature-spec-plan`): `--from-spec <path>` · `--out <dir>` · `--tasks-only`
+
+**Produces:** `docs/specs/<date>-<slug>/{spec.md, tree.md, critique.md, traceability.md}`, `plan/{plan.md, tasks/T0N.md, plan-critique.md}` if you run the plan command, `docs/specs/GLOSSARY.md`, and ADRs in `docs/adr/`
+
+**Stops at the plan.** No code, no `/implement`, and no estimates in hours or days at either stage.
 
 **Works with:** any project; sharpest on iOS/Swift
 

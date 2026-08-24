@@ -49,8 +49,8 @@
     {
       "name": "feature-spec",
       "source": "./plugins/feature-spec",
-      "description": "Bounded, resumable requirements interview that ends in a critic-verified spec. Commands: feature-spec, grill, write.",
-      "version": "1.0.0"
+      "description": "Bounded, resumable requirements interview that ends in a critic-verified spec, then turns that spec into a checked implementation plan. Commands: feature-spec, grill, write, plan.",
+      "version": "1.1.0"
     }
   ]
 }

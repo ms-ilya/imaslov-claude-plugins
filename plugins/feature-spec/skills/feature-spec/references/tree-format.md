@@ -9,7 +9,7 @@ working memory does not survive compaction; the file does.
 ## Contents
 - The skeleton
 - What each section is for
-- Nine rules the format depends on
+- Eleven rules the format depends on
 - When the file will not parse
 
 ## The skeleton
@@ -26,7 +26,7 @@ between crashes.
 Slug: 2026-08-21-retry-uploads   Started: 2026-08-21   Mode: default
 Stack: none   Scope: cmd/ingest
 Round: 2 of 3   4th round unlocked: no   Next phase: 2
-Counters: questions 10 · fact-finders 2 · references 4 · orchestrator reads 5 · critic passes 0
+Counters: questions 10 · fact-finders 2 · references 4 · orchestrator reads 5 · lines read 340 · critic passes 0
 Largest single read: 180 lines
 Guard: not tripped
 Rules in force: R1 R2 R5 R8 R9
@@ -108,7 +108,7 @@ Superseded ## Settled entries land here. Drafting does not read this section.
 | `## Sessions` | One line per session. Amendment appends; it never rewrites. | every session |
 | `## History` | Overflow only. Not read when drafting. | on the 400-line rule |
 
-## Nine rules the format depends on
+## Eleven rules the format depends on
 
 1. **Question identifiers never repeat and never renumber.** `Q7` means one
    question for the life of the file, wherever it has moved to.
@@ -136,6 +136,19 @@ Superseded ## Settled entries land here. Drafting does not read this section.
    answer is given, when the user is there to supply it.
 9. **`## Problem` is one line and it is never blank.** If the idea is too vague
    to state in one line, that is the first thing round 1 asks.
+10. **`## Reads` may name a file outside the repository.** Write it as it is —
+    `- ~/.claude/rules/swift.md   (principles, outside the repo)`. An absolute or
+    `~`-prefixed path is legal and is expanded before it is checked — a machine
+    may keep its only `AGENTS.md` in `~/.claude/`, and calling that real file
+    invented forces the writer to quote it into the record by hand. It is
+    checked, not skipped: a typo in an absolute path fails at drafting time like
+    any other.
+11. **`## Strategy` takes one `Chosen:` line per axis, and tolerates
+    decoration.** A round can settle two independent strategy questions —
+    structure and rendering, say — and each gets its own line:
+    `- **Chosen (structure): C — extract HeadFrame.**` The axis in parentheses is
+    optional, bold and bullets are ignored, and every requirement citing either
+    one tags `← Strategy (chosen)` regardless. `Rejected:` works the same way.
 
 ## When the file will not parse
 

@@ -59,23 +59,29 @@ they are two categories and not one with two names.
 
 ### Three scoring rules
 
+> **`check-tree.sh` enforces the shape of rules 1 and 2 on every write, and
+> `check-spec.sh` catches the most common adjectives in rule 3.** So do not spend
+> attention self-policing the formatting — spend it on the judgement below, which
+> is the part no script can make.
+
 1. **Bounded deferral counts toward Clear.** A deliberate deferral is a decision.
    Without this, one low-value open question holds a category open forever and
    the interview never terminates.
 
-   **The bound:** clear-by-deferral applies only if **no deferred item in the
-   category was rated High impact.** A High-impact deferral holds the category at
-   **Partial**. Without the bound, deferring everything reports full clearance —
-   and a coverage table that lies is worse than an interview that runs long.
-
-   **Rendering:** it prints as **`Clear*`** with the count — `Clear* (2 deferred)`
-   — everywhere it appears, always. A reader must be able to tell a decided
-   category from a deferred one at a glance, and so must the critic.
+   **The bound is the judgement:** clear-by-deferral applies only if **no deferred
+   item in the category was rated High impact.** A High-impact deferral holds the
+   category at **Partial**. Without the bound, deferring everything reports full
+   clearance — and a coverage table that lies is worse than an interview that runs
+   long. Rendering is `Clear* (2 deferred)`, everywhere, always; the script fails
+   the file if the count is missing.
 2. **`N/A` requires a stated reason.** *"Integration & dependencies — N/A: makes
-   no network calls and reads no external data."* An unjustified `N/A` is a
-   dodge; the critic flags it.
+   no network calls and reads no external data."* An unjustified `N/A` is a dodge.
 3. **The unquantified-adjective scan runs every round, across all categories.**
    Any adjective whose truth you could not measure drops its category to Partial.
+
+   The script matches a fixed word list. **The judgement is wider than the list:**
+   the test is whether you could state the number that would settle it, not
+   whether the word appears in a table somewhere.
 
    *Fails:* "the import should feel responsive." · "errors are handled
    gracefully." · "the flag is intuitive."
