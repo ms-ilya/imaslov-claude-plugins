@@ -1,0 +1,259 @@
+{
+  "category": "safety",
+  "rules": [
+    {
+      "id": "ugc-no-report-mechanism",
+      "title": "User-generated content with no way to report objectionable material",
+      "guideline": "1.2",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "An app with user-generated content must provide a method for filtering objectionable material, a mechanism to report it with timely responses, and the ability to block abusive users. Missing any one of the four is a rejection, and reporting is the one most often absent.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(post(Comment|Message)|uploadPhoto|createPost|submitReview|sendMessage|publishContent)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(report(Content|User|Post|Abuse)|flagContent|reportButton)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add a report control on every surface that displays user-generated content",
+        "Commit to acting on reports and removing the offending content, which is the half of the guideline the UI cannot show"
+      ],
+      "sources": ["cruisediary", "safaiyeh", "justinperea"],
+      "guidance": "ugc-no-report-mechanism"
+    },
+    {
+      "id": "ugc-no-block-user",
+      "title": "User-generated content with no way to block abusive users",
+      "guideline": "1.2",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Blocking abusive users is one of the four capabilities Apple names for apps with user-generated content. Reviewers test for it directly.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(follow(User|ers)|directMessage|sendMessage|userProfile|comment)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(block(User|Account)|muteUser|blockedUsers)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add a block control on user profiles and on messages, and hide blocked users' content"
+      ],
+      "sources": ["cruisediary", "safaiyeh"],
+      "guidance": "ugc-no-block-user"
+    },
+    {
+      "id": "ugc-no-content-filtering",
+      "title": "User-generated content with no filtering of objectionable material",
+      "guideline": "1.2",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Apple requires a method for filtering objectionable material before it is posted, not only a way to report it afterwards.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(createPost|uploadPhoto|submitComment)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(moderat|profanity|contentFilter|SensitiveContentAnalysis|textModeration)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add content filtering before publication — on-device with SensitiveContentAnalysis, or server-side moderation",
+        "Where moderation is entirely server-side, say so in review notes, because the client shows no evidence of it"
+      ],
+      "sources": ["cruisediary", "safaiyeh"],
+      "guidance": "ugc-no-content-filtering"
+    },
+    {
+      "id": "ugc-terms-not-accepted",
+      "title": "No terms of use requiring that users accept the no-tolerance policy",
+      "guideline": "1.2",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Apps with user-generated content must publish terms of use in which users agree there is no tolerance for objectionable content or abusive behaviour.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(createPost|uploadPhoto|submitComment|sendMessage)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(termsOfUse|eula|acceptTerms|communityGuidelines)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Require acceptance of terms that state a no-tolerance policy before the user can publish content"
+      ],
+      "sources": ["cruisediary", "safaiyeh"],
+      "guidance": "ugc-terms-not-accepted"
+    },
+    {
+      "id": "creator-content-age-restriction",
+      "title": "Creator content with no age-restriction mechanism",
+      "guideline": "1.2.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Apps carrying creator content must let users identify software exceeding the app's age rating and restrict access by verified or declared age. Declared age is explicitly permitted here, which is a different bar from the Kids Category gate.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(creator|channel|streamer)[A-Za-z]*(Content|Feed|Upload)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(ageRating|ageGate|dateOfBirth|birthDate|ageRestrict)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add an age-restriction mechanism based on verified or declared age",
+        "Surface each item's age rating so users can identify content above the app's rating"
+      ],
+      "sources": ["devsemih", "safaiyeh"],
+      "guidance": "creator-content-age-restriction"
+    },
+    {
+      "id": "kids-category-third-party-analytics",
+      "title": "Kids Category app links third-party analytics or advertising",
+      "guideline": "1.3",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Apps in the Kids Category may not send personally identifiable information or device information to third parties, and may not include third-party analytics or advertising. This is enforced strictly and is the most common Kids Category rejection.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "dependency", "file_class": "package_manifest", "pattern": "(?i)(GoogleMobileAds|FacebookSDK|AppsFlyer|Adjust|Amplitude|Mixpanel|Firebase/Analytics|Segment)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "any", "pattern": "(?i)(kids|children|toddler|preschool)", "present": true, "note": "Kids Category membership is an App Store Connect setting. Presence of child-directed vocabulary is a signal, not proof, so this stays PROBABLE and the subagent must say so."}
+        ]
+      },
+      "resolutions": [
+        "Remove third-party analytics and advertising SDKs from a Kids Category build",
+        "Where the app is not in the Kids Category, confirm that in App Store Connect — the requirement does not apply outside it"
+      ],
+      "sources": ["cruisediary", "safaiyeh"],
+      "guidance": "kids-category-third-party-analytics"
+    },
+    {
+      "id": "kids-category-external-link-ungated",
+      "title": "Kids Category app opens external links without a parental gate",
+      "guideline": "1.3",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Kids Category apps must gate links out of the app, purchases and other distractions behind a parental gate. A date-of-birth field does not satisfy this gate, because a child can answer it.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(UIApplication\\.shared\\.open|SFSafariViewController)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(parentalGate|parentGate|adultVerification)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Put a parental gate in front of every outbound link and purchase entry point",
+        "Use a gate a child cannot pass — arithmetic or a timed gesture, not a date of birth"
+      ],
+      "sources": ["safaiyeh", "cruisediary"],
+      "guidance": "kids-category-external-link-ungated"
+    },
+    {
+      "id": "medical-claims-unsubstantiated",
+      "title": "Health claims are accurate and the regulatory position is documented",
+      "guideline": "1.4.1",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "Whether a health claim is substantiated is a factual and regulatory question about the world, not about the code. No scan can decide it.",
+      "why": "Apps providing medical information or measurements must be accurate, must name their methodology, and may be rejected where inaccurate readings could cause physical harm.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(diagnos|bloodPressure|heartRate|glucose|bodyTemperature|symptomCheck|treatment)", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "State the methodology and its limits in the app and in review notes",
+        "Where the app measures anything clinical, be ready to show the regulatory clearance a reviewer will ask for"
+      ],
+      "sources": ["cruisediary", "safaiyeh"],
+      "guidance": "medical-claims-unsubstantiated"
+    },
+    {
+      "id": "healthkit-data-to-advertising",
+      "title": "HealthKit data must not reach advertising or data brokers",
+      "guideline": "5.1.3",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Apps may not use HealthKit data for advertising or share it with third parties for that purpose. Apple treats this as a hard rejection and a removal ground.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "symbol", "file_class": "swift", "pattern": "HKHealthStore", "present": true, "evidence": true},
+          {"kind": "dependency", "file_class": "package_manifest", "pattern": "(?i)(GoogleMobileAds|AppsFlyer|Adjust|FacebookSDK)", "present": true}
+        ]
+      },
+      "resolutions": [
+        "Keep HealthKit values out of any payload reaching an advertising or attribution SDK",
+        "Where both exist for unrelated features, confirm the data paths do not join, and say so in review notes"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "healthkit-data-to-advertising"
+    },
+    {
+      "id": "live-payment-secret-in-binary",
+      "title": "A live server-side payment secret is embedded in the app",
+      "guideline": "1.6",
+      "severity": "critical",
+      "verifiability": "PROVEN",
+      "why": "A secret key shipped in the binary can be extracted from any installed copy and used to charge or refund against the developer's account. Apple treats shipped server credentials as a failure to handle user information securely.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "any", "pattern": "\\b(sk_live_|rk_live_|sk_test_[A-Za-z0-9]{20,})[A-Za-z0-9]{8,}", "present": true, "evidence": true, "note": "Stripe secret and restricted keys."},
+          {"kind": "regex", "file_class": "any", "pattern": "\\b(AKIA[0-9A-Z]{16})\\b", "present": true, "note": "AWS access key id."},
+          {"kind": "regex", "file_class": "any", "pattern": "-----BEGIN (RSA |EC )?PRIVATE KEY-----", "present": true, "note": "An embedded private key."}
+        ]
+      },
+      "resolutions": [
+        "Move the secret to a server and have the app call that server instead",
+        "Rotate the exposed key — it must be treated as compromised the moment it shipped"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "live-payment-secret-in-binary",
+      "statements": [
+        {"source": "justinperea", "says": "Client-side keys that are designed to be public — Firebase's apiKey in GoogleService-Info.plist, a Maps API key restricted by bundle id — are NOT findings; they are meant to be in the binary and flagging them is a false positive.", "stricter_than_apple": false},
+        {"source": "apple", "says": "Apps should implement appropriate security measures to ensure proper handling of user information collected pursuant to the Apple Developer Program License Agreement.", "stricter_than_apple": false}
+      ]
+    },
+    {
+      "id": "emergency-services-reliance",
+      "title": "App does not present itself as a substitute for emergency services",
+      "guideline": "1.4.4",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "Whether the app's marketing and UI copy claim emergency reliability is a judgement about presentation, made across screens and store metadata rather than at a single line of code.",
+      "why": "Apps may not claim to provide emergency services or to be a substitute for calling them, because a user relying on that claim can be harmed.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(emergency|sos|panicButton|911|112)", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "State plainly in the app that it is not a substitute for emergency services, wherever an emergency feature appears"
+      ],
+      "sources": ["cruisediary"],
+      "guidance": "emergency-services-reliance"
+    },
+    {
+      "id": "developer-contact-information-absent",
+      "title": "Support URL and contact information are current and reachable",
+      "guideline": "1.5",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "The support URL and contact details are App Store Connect metadata, and whether the URL resolves depends on a live server. Nothing in the repository can answer either question.",
+      "why": "1.5 requires a support URL with current contact information for every app, and an easy way to reach the developer for apps aimed at children. It applies to every submission, which is why it is worth one unconditional line rather than a rule that waits for a pattern.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "always", "present": true}
+        ]
+      },
+      "resolutions": [
+        "Confirm the support URL in App Store Connect resolves and carries current contact information",
+        "For an app aimed at children, confirm the marketing text and support page give an easy way to reach you"
+      ],
+      "sources": ["apple"],
+      "guidance": "developer-contact-information-absent"
+    }
+  ]
+}

@@ -1,0 +1,226 @@
+{
+  "category": "business",
+  "rules": [
+    {
+      "id": "digital-goods-outside-iap",
+      "title": "A payment SDK appears to sell digital content outside In-App Purchase",
+      "guideline": "3.1.1",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Unlocking features or content inside the app must use In-App Purchase. Taking payment for digital goods through a third-party processor is one of the few rejections Apple treats as non-negotiable.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(Stripe|PayPal|Braintree|Square|Adyen|RazorPay|Paddle)", "present": true, "evidence": true, "note": "Payment SDKs are legitimate for physical goods and real-world services — a food delivery or ride-hailing app is expected to have one. The subagent must establish that what is being sold is DIGITAL before emitting; failing to do so is the most damaging false positive this catalogue can produce."},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(subscription|premium|unlockFeature|proVersion|removeAds|credits|coins|tokens)", "present": true}
+        ]
+      },
+      "resolutions": [
+        "Sell the digital content through StoreKit In-App Purchase",
+        "If the transaction is for physical goods or a real-world service, no change is needed — record which, because a reviewer will ask"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "digital-goods-outside-iap"
+    },
+    {
+      "id": "hardcoded-price-string",
+      "title": "A price is hardcoded rather than read from StoreKit",
+      "guideline": "3.1.1",
+      "severity": "warning",
+      "verifiability": "PROVEN",
+      "why": "A hardcoded price is wrong in every storefront but one, and wrong everywhere after a price change. Apple rejects paywalls showing a price that does not match the product.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "\"[^\"]*[$£€¥]\\s?[0-9]+([.,][0-9]{2})?[^\"]*\"", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(StoreKit|SKProduct|Product\\.)", "present": true}
+        ]
+      },
+      "resolutions": [
+        "Display the localized price StoreKit returns — displayPrice on Product, or priceLocale formatting on SKProduct",
+        "Where the string is not a product price, confirm it is not shown on a purchase screen"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "hardcoded-price-string"
+    },
+    {
+      "id": "subscription-terms-not-disclosed",
+      "title": "Subscription paywall does not disclose the terms Apple requires",
+      "guideline": "3.1.2",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "An auto-renewable subscription paywall must show the price, the period, what the subscription includes, and links to the terms of service and privacy policy. A missing link is a routine rejection.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(Product\\.SubscriptionInfo|SKProductSubscriptionPeriod|autoRenewable)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(termsOfService|termsOfUse|eula|privacyPolicy)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add terms of service and privacy policy links to the paywall itself, not only to a settings screen",
+        "State the price, the billing period and the renewal behaviour on the same screen as the purchase button"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "subscription-terms-not-disclosed"
+    },
+    {
+      "id": "restore-purchases-absent",
+      "title": "App sells non-consumables or subscriptions with no restore path",
+      "guideline": "3.1.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "A user reinstalling on a new device must be able to restore what they bought. Apple rejects paid apps with no restore control.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(SKPaymentQueue|Product\\.purchase|StoreKit)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(restoreCompletedTransactions|AppStore\\.sync|currentEntitlements)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add a Restore Purchases control that calls AppStore.sync() or restoreCompletedTransactions()",
+        "Where entitlements are resolved from currentEntitlements on launch, expose a manual restore anyway — reviewers look for the control"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "restore-purchases-absent"
+    },
+    {
+      "id": "external-purchase-link-unentitled",
+      "title": "App links out to a purchase page without the entitlement that permits it",
+      "guideline": "3.1.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Linking to an external purchase method requires either the StoreKit External Purchase Link entitlement or the US storefront allowance under 3.1.1(a). Linking without one is treated as steering around In-App Purchase.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)openURL[\\s\\S]{0,120}?(subscribe|upgrade|buy|pricing|checkout|billing)", "present": true, "evidence": true},
+          {"kind": "entitlement", "file_class": "entitlements", "key": "com.apple.developer.storekit.external-purchase-link", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Apply for the External Purchase Link entitlement and add it to the target",
+        "Or remove the outbound purchase link and sell through In-App Purchase",
+        "If the app ships only to the United States storefront, confirm the 3.1.1(a) allowance covers this link before relying on it"
+      ],
+      "sources": ["safaiyeh"],
+      "guidance": "external-purchase-link-unentitled"
+    },
+    {
+      "id": "receipt-validated-on-device-only",
+      "title": "Purchase entitlement is decided on device with no server verification",
+      "guideline": "3.1.1",
+      "severity": "suggestion",
+      "verifiability": "PROBABLE",
+      "why": "On-device-only validation is trivially bypassed. This is a quality signal rather than a rejection, so it is reported as a suggestion.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "appStoreReceiptURL", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(verifyReceipt|/verify|serverVerif|jwsRepresentation)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Verify the signed transaction on a server before granting a durable entitlement",
+        "Use StoreKit 2's verified transaction result rather than parsing the receipt file directly"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "receipt-validated-on-device-only"
+    },
+    {
+      "id": "loot-box-odds-undisclosed",
+      "title": "Randomised in-app purchase does not disclose its odds",
+      "guideline": "3.1.1",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Apps offering loot boxes or any randomised virtual item for purchase must disclose the odds of receiving each item type before the purchase is made.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(lootBox|gacha|mysteryBox|randomReward|prizeWheel|cardPack)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(odds|probabilit|dropRate|chancePercent)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Show the odds for each item tier on the purchase screen, before the user commits",
+        "Where the randomised item is earned rather than purchased, no disclosure is required — confirm no purchase path reaches it"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "loot-box-odds-undisclosed"
+    },
+    {
+      "id": "iap-products-approved",
+      "title": "Every in-app purchase product is submitted and in a reviewable state",
+      "guideline": "3.1.1",
+      "severity": "critical",
+      "verifiability": "MANUAL",
+      "why_manual": "Product state lives in App Store Connect. A product identifier in source proves the app asks for it, not that it exists or was submitted.",
+      "why": "A paywall whose products are not attached to the version under review shows an empty or broken purchase screen to the reviewer, which is rejected as incomplete.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(Product\\.products|SKProductsRequest|productIdentifiers)", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "Confirm every product identifier the app requests exists in App Store Connect and is attached to this version"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "iap-products-approved"
+    },
+    {
+      "id": "brazil-alternative-payment-terms",
+      "title": "Brazil storefront alternative payment and marketplace terms are met",
+      "guideline": "3.1.1",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "Whether the app is distributed on the Brazilian storefront, and under which developer terms, is App Store Connect state rather than repository state.",
+      "why": "Following Apple's June 2026 CADE agreement, apps on the Brazilian storefront on iOS 26.5 and later may use external payments and alternative marketplaces under specific terms. The requirement is regional and dated, so it is verified against Apple's policy announcements rather than the guidelines page.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(pix|boleto|mercadopago|pagseguro|\\bBRL\\b)", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "Confirm the Brazilian storefront terms this build relies on, and that the entitlements they require are in place"
+      ],
+      "sources": ["safaiyeh"],
+      "guidance": "brazil-alternative-payment-terms",
+      "applies_to": {"storefronts": ["BR"], "effective": "2026-06-01"}
+    },
+    {
+      "id": "eu-core-technology-commission",
+      "title": "EU Core Technology Commission terms are accounted for",
+      "guideline": "3.1.1",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "Which EU business terms a developer account is on is account state, not repository state.",
+      "why": "From October 1 2026 the Core Technology Fee is replaced by a 5% Core Technology Commission for developers on the EU alternative terms. Which terms apply changes what a build may do about payments in the EU.",
+      "detection": {"match": "all_of", "clauses": [{"kind": "always", "present": true}]},
+      "resolutions": [
+        "Confirm which EU business terms the account is on and whether the Core Technology Commission applies to this app"
+      ],
+      "sources": ["safaiyeh"],
+      "guidance": "eu-core-technology-commission",
+      "applies_to": {"storefronts": ["EU"], "effective": "2026-10-01"}
+    },
+    {
+      "id": "korea-grac-rating-override",
+      "title": "Republic of Korea GRAC rating requirements are met for a game",
+      "guideline": "3.1.1",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "GRAC classification is obtained outside the app and recorded in App Store Connect.",
+      "why": "Games distributed in the Republic of Korea require a GRAC rating classification number, and Apple's October 2026 descriptor reclassification moves some descriptors to 12+.",
+      "detection": {"match": "all_of", "clauses": [{"kind": "always", "present": true}]},
+      "resolutions": [
+        "Obtain the GRAC rating classification number and enter it in App Store Connect before distributing to the Korean storefront"
+      ],
+      "sources": ["safaiyeh"],
+      "guidance": "korea-grac-rating-override",
+      "applies_to": {"storefronts": ["KR"], "effective": "2026-10-01"}
+    }
+  ]
+}

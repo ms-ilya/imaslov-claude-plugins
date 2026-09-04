@@ -1,0 +1,221 @@
+{
+  "category": "design",
+  "rules": [
+    {
+      "id": "login-service-equivalent-option-absent",
+      "title": "Third-party login offered with no equivalent privacy-preserving option",
+      "guideline": "4.8",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Apple's text requires that an app using a third-party or social login also offer an equivalent option meeting three criteria: the service limits collection to name and email, lets the user keep the email private, and does not collect in-app interactions for advertising without consent. Sign in with Apple satisfies all three, but it is one way to satisfy them, not the requirement itself.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(GIDSignIn|FBSDKLoginManager|LoginManager\\(\\)|TWTRLogInButton|LineSDK|WeChatSDK|VKSdk)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(ASAuthorizationAppleIDButton|ASAuthorizationAppleIDProvider)", "present": false, "note": "Absence of Sign in with Apple is NOT sufficient to emit. It is one input of three."},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(signInWithEmail|emailAuth|emailLogin|passwordSignIn|magicLink|signUpWithEmail|createUserWithEmail)", "present": false, "note": "The carve-out, encoded rather than left to judgement. An email login collecting only name and email already satisfies Apple's three criteria, so its presence means there is no finding. This clause exists because the prose warning alone was not enough: the rule fired against a compliant fixture until the condition was written into the pattern. The subagent must still read what the alternative login actually collects — a spelling this pattern does not know is why the rule stays PROBABLE."}
+        ]
+      },
+      "resolutions": [
+        "Offer Sign in with Apple alongside the third-party login",
+        "Or offer any login service meeting Apple's three criteria — an email login collecting only name and email qualifies, and no change is needed if one already exists"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh", "apple"],
+      "guidance": "login-service-equivalent-option-absent",
+      "statements": [
+        {"source": "justinperea", "says": "An app with third-party login must also offer Sign in with Apple; classified BLOCKER.", "stricter_than_apple": true},
+        {"source": "cruisediary", "says": "Failure to include Sign in with Apple will result in rejection.", "stricter_than_apple": true},
+        {"source": "safaiyeh", "says": "The requirement is a login service meeting three criteria; Sign in with Apple is the simplest way to meet them, not the only one.", "stricter_than_apple": false},
+        {"source": "apple", "says": "Apps using a third-party or social login must also offer as an equivalent option another login service that limits data collection to name and email, allows the user to keep the email address private, and does not collect interactions with the app for advertising purposes without consent.", "stricter_than_apple": false}
+      ]
+    },
+    {
+      "id": "minimum-functionality-web-wrapper",
+      "title": "App appears to be a web view wrapped around a website",
+      "guideline": "4.2",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "An app must offer features, content and UI beyond a repackaged website. A single web view loading a remote URL as the root interface is the shape Apple rejects most consistently under this guideline.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "WKWebView", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)load\\(URLRequest\\(url:\\s*URL\\(string:\\s*\"https?://", "present": true, "note": "A web view used for one screen — a help page, a checkout — is normal. This applies where the web view IS the app's root interface, which the subagent must confirm by looking at what the root view controller or the App scene actually presents."}
+        ]
+      },
+      "resolutions": [
+        "Add native functionality the website does not provide — offline support, notifications, device integration",
+        "Where the app is genuinely a companion to a service, ensure native navigation and native screens surround the web content rather than replacing them"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "minimum-functionality-web-wrapper"
+    },
+    {
+      "id": "push-entitlement-unused",
+      "title": "Push notification entitlement declared with no registration in source",
+      "guideline": "4.5.4",
+      "severity": "warning",
+      "verifiability": "PROVEN",
+      "why": "An entitlement the app never exercises produces a provisioning profile mismatch at upload and invites a reviewer question about a capability the app does not use.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "entitlement", "file_class": "entitlements", "key": "aps-environment", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "registerForRemoteNotifications", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Remove the aps-environment entitlement and the Push Notifications capability if the app does not send push",
+        "Or call registerForRemoteNotifications and implement the delegate callbacks if push is intended"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "push-entitlement-unused"
+    },
+    {
+      "id": "push-required-to-function",
+      "title": "Core functionality is gated behind granting push permission",
+      "guideline": "4.5.4",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Push notifications must not be required for the app to function. Blocking onboarding until the user accepts the push prompt is the common form of this rejection.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "requestAuthorization[\\s\\S]{0,300}?(guard|if)\\s+[^\\n]{0,60}(granted|authorized)[\\s\\S]{0,200}?(return|exit|dismiss)", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "Let the user continue into the app when push permission is declined",
+        "Move the push request to the point where a feature that needs it is first used"
+      ],
+      "sources": ["cruisediary", "safaiyeh"],
+      "guidance": "push-required-to-function"
+    },
+    {
+      "id": "push-marketing-without-optin",
+      "title": "Promotional push content with no in-app opt-out",
+      "guideline": "4.5.4",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Push may not be used for promotions or direct marketing unless the user explicitly opted in through in-app consent language, and the app must provide a way to opt out.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(promo|marketing|campaign|offer)[A-Za-z]*(Notification|Push)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(notificationSettings|pushPreferences|unsubscribe|optOut)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add an in-app setting that turns marketing notifications off independently of transactional ones",
+        "Show explicit consent language before enrolling the user in promotional push"
+      ],
+      "sources": ["safaiyeh"],
+      "guidance": "push-marketing-without-optin"
+    },
+    {
+      "id": "apple-trademark-in-bundle-id",
+      "title": "Bundle identifier or display name contains an Apple trademark",
+      "guideline": "5.2.5",
+      "severity": "warning",
+      "verifiability": "PROVEN",
+      "why": "An app may not appear confusingly similar to an Apple product. A bundle identifier or name containing an Apple mark is caught during metadata review.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "build_setting", "key": "PRODUCT_BUNDLE_IDENTIFIER", "pattern": "(?i)(^|\\.)(apple|iphone|ipad|ios|macos|watchos|airdrop|facetime|imessage|siri|safari)(\\.|$)", "present": true, "evidence": true, "note": "A reverse-DNS component that merely contains the letters — com.pineapple.app — must not fire; the component boundary is what matters."}
+        ]
+      },
+      "resolutions": [
+        "Rename the bundle identifier component that carries the Apple mark",
+        "Where the app genuinely integrates with an Apple service, describe the integration in the name without using the mark as the identifier"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "apple-trademark-in-bundle-id"
+    },
+    {
+      "id": "spam-duplicate-bundle-ids",
+      "title": "The account does not ship near-identical apps under separate bundle IDs",
+      "guideline": "4.3",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "Whether other apps on the same developer account duplicate this one is a fact about the account, not about this repository. No scan of one project can see it.",
+      "why": "Apple rejects multiple bundle IDs of the same app, and rejects apps in a saturated category that add nothing. Both are decided across an account rather than within a build.",
+      "detection": {"match": "all_of", "clauses": [{"kind": "always", "present": true}]},
+      "resolutions": [
+        "Consolidate location or team variants into one app with selectable content rather than separate bundle IDs"
+      ],
+      "sources": ["safaiyeh", "cruisediary"],
+      "guidance": "spam-duplicate-bundle-ids"
+    },
+    {
+      "id": "age-rating-questionnaire-unanswered",
+      "title": "The updated age-rating questionnaire is answered for this submission",
+      "guideline": null,
+      "severity": "critical",
+      "verifiability": "MANUAL",
+      "why_manual": "Age-rating answers live in App Store Connect. No property of the repository indicates whether the questionnaire was completed.",
+      "why": "Apple requires responses to the updated age-rating questionnaire — including the Social Media descriptor and Time Allowances questions — from every new app and every update submitted from September 2026. It is not scoped to social apps, so an item shown only where social vocabulary appears misses most of the submissions it applies to.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "always", "present": true}
+        ]
+      },
+      "resolutions": [
+        "Answer the updated age-rating questionnaire in App Store Connect before submitting, including the Time Allowances questions"
+      ],
+      "sources": ["safaiyeh"],
+      "guidance": "age-rating-questionnaire-unanswered",
+      "applies_to": {"effective": "2026-09-01"}
+    },
+    {
+      "id": "age-rating-social-descriptor",
+      "title": "The Social Media descriptor is answered for an app with user-to-user surfaces",
+      "guideline": null,
+      "severity": "critical",
+      "verifiability": "MANUAL",
+      "why_manual": "Age-rating answers live in App Store Connect. The scan can see that the app has social surfaces; it cannot see what was declared.",
+      "why": "The Social Media descriptor asks specifically about user-to-user communication. An app with messaging, profiles or following that answers it as though it has none is held in review, and the answer is harder to get right than the questionnaire's other items.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {
+            "kind": "regex",
+            "file_class": "swift",
+            "pattern": "\\b(sendMessage|messageThread|messageBubble|directMessage|chatRoom|chatView|chatSession|conversationView|followUser|unfollowUser|follower(s?)Count|followingCount|userProfile|profileView|postComment|commentOn|commentThread|newsFeed|activityFeed|blockUser|reportUser)\\b",
+            "present": true,
+            "evidence": true,
+            "note": "Match a symbol that names a user-to-user surface, never a substring. `errorMessage`, `statusMessage`, `alertMessage`, and the `message` payloads of WebRTC or socket signalling are transport, not social features. `followDistance`, `followTarget` and camera or inertia 'follow' are geometry. A loose substring pattern matched 16 files on a live audit and every one of them was incidental, which is how a checklist item becomes noise the developer learns to skip."
+          }
+        ]
+      },
+      "resolutions": [
+        "Answer the Social Media descriptor in App Store Connect to reflect the user-to-user features the scan found",
+        "If the matched symbol is not a user-to-user feature, no action is needed — say so on the questionnaire rather than leaving it unanswered"
+      ],
+      "sources": ["safaiyeh"],
+      "guidance": "age-rating-social-descriptor",
+      "applies_to": {"effective": "2026-09-01"}
+    },
+    {
+      "id": "streaming-game-catalogue-rules",
+      "title": "Mini apps, chatbots and streamed games follow the 4.7 conditions",
+      "guideline": "4.7",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "Whether embedded content meets 4.7's conditions depends on what the remote catalogue serves at review time, which no static scan can enumerate.",
+      "why": "Software not embedded in the binary — mini apps, mini games, chatbots, plug-ins, emulators — may be offered only under 4.7's conditions, including that the content follows the guidelines and is age-rated appropriately.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(miniApp|miniGame|emulator|romLoader|pluginStore|chatbot|llmProxy)", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "Confirm the embedded catalogue is moderated and age-rated to the app's own rating, and describe the moderation in review notes"
+      ],
+      "sources": ["safaiyeh", "devsemih"],
+      "guidance": "streaming-game-catalogue-rules"
+    }
+  ]
+}

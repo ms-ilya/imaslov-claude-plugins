@@ -1,0 +1,1 @@
+f9a746fb8e9a0e36368cada8a2d39813310d77c4 2026-05-02 Merge pull request #2 from cruisediary/feat/skill-detection-steps

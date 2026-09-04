@@ -1,0 +1,19 @@
+{
+  "name": "appstore-guideline-auditor",
+  "description": "Read-only App Store guideline audit for native iOS projects. Grades every finding by severity and by how firmly code evidence supports it, checks citations against Apple's current published text, and emits an App Store Connect checklist for what no code scan can decide.",
+  "version": "1.1.0",
+  "author": {
+    "name": "Ilya"
+  },
+  "keywords": [
+    "ios",
+    "swift",
+    "app-store",
+    "app-review",
+    "guidelines",
+    "privacy-manifest",
+    "rejection",
+    "compliance",
+    "audit"
+  ]
+}

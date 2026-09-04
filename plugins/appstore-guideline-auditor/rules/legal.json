@@ -1,0 +1,375 @@
+{
+  "category": "legal",
+  "rules": [
+    {
+      "id": "privacy-manifest-absent",
+      "title": "Shipping target has no PrivacyInfo.xcprivacy",
+      "guideline": "5.1.1",
+      "severity": "critical",
+      "verifiability": "PROVEN",
+      "why": "Apple's submission pipeline scans every target in the binary and rejects with ITMS-91053 when a target that touches a required-reason API ships no privacy manifest. The scan is automated, so this is a rejection that happens before a human reviewer ever opens the app.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "file", "file_class": "privacy_manifest", "present": false, "evidence": true},
+          {"kind": "file", "file_class": "info_plist", "present": true, "note": "Anchors the finding to a real bundled target; a target with no Info.plist is not one Apple validates separately."}
+        ]
+      },
+      "resolutions": [
+        "Add a PrivacyInfo.xcprivacy to this target and list it in that target's Copy Bundle Resources build phase",
+        "If the target ships no code that reaches a required-reason API and collects no data, declare an empty NSPrivacyAccessedAPITypes array rather than omitting the file"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "privacy-manifest-absent",
+      "cases": [
+        {
+          "symptom": "Received ITMS-91053 \"Missing API declaration\" — app used UserDefaults without a PrivacyInfo.xcprivacy declaring reason CA92.1",
+          "source": "https://developer.apple.com/documentation/bundleresources/privacy-manifest-files",
+          "root_cause": "Every app using a required-reason API must declare it in PrivacyInfo.xcprivacy; Apple's automated pipeline scans submitted binaries and issues ITMS-91053 for missing declarations, enforced from May 1 2024",
+          "itms": "ITMS-91053"
+        }
+      ]
+    },
+    {
+      "id": "privacy-manifest-extension-missing",
+      "title": "App extension ships without its own privacy manifest",
+      "guideline": "5.1.1",
+      "severity": "critical",
+      "verifiability": "PROVEN",
+      "why": "ITMS-91053 is evaluated per target, not per app. A widget, share extension or notification service with its own binary is validated as a separate product, and the app target's manifest does not cover it.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "build_setting", "key": "PRODUCT_TYPE", "equals": "com.apple.product-type.app-extension", "present": true},
+          {"kind": "file", "file_class": "privacy_manifest", "present": false, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "Add a PrivacyInfo.xcprivacy to the extension target itself, not only to the app target",
+        "Verify it appears in the extension target's Copy Bundle Resources — a manifest present on disk but absent from the build phase does not ship"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "privacy-manifest-extension-missing"
+    },
+    {
+      "id": "required-reason-api-undeclared",
+      "title": "Required-reason API used with no matching declaration in the privacy manifest",
+      "guideline": "5.1.1",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Apple defines five required-reason API categories. Calling one without declaring an approved reason code produces ITMS-91053 on upload, and the call may come from a dependency rather than from first-party code.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "symbol", "file_class": "swift", "pattern": "UserDefaults", "present": true, "evidence": true, "note": "Category NSPrivacyAccessedAPICategoryUserDefaults, reason CA92.1 for app-only data or 1C8F.1 via App Groups."},
+          {"kind": "symbol", "file_class": "swift", "pattern": "mach_absolute_time", "present": true, "note": "Category NSPrivacyAccessedAPICategorySystemBootTime, reason 35F9.1."},
+          {"kind": "symbol", "file_class": "swift", "pattern": "systemUptime", "present": true, "note": "Category NSPrivacyAccessedAPICategorySystemBootTime, reason 35F9.1."},
+          {"kind": "symbol", "file_class": "swift", "pattern": "volumeAvailableCapacity", "present": true, "note": "Category NSPrivacyAccessedAPICategoryDiskSpace, reason E174.1."},
+          {"kind": "symbol", "file_class": "swift", "pattern": "contentModificationDate", "present": true, "note": "Category NSPrivacyAccessedAPICategoryFileTimestamp, reason C617.1 inside the app container."},
+          {"kind": "symbol", "file_class": "swift", "pattern": "activeInputModes", "present": true, "note": "Category NSPrivacyAccessedAPICategoryActiveKeyboards, reason 3EC4.1."}
+        ]
+      },
+      "resolutions": [
+        "Declare the matching NSPrivacyAccessedAPIType with an approved reason code in this target's PrivacyInfo.xcprivacy",
+        "If the call comes from a dependency rather than first-party code, upgrade to an SDK version shipping its own privacy manifest before declaring it at app level"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "required-reason-api-undeclared",
+      "cases": [
+        {
+          "symptom": "App using the Firebase Performance SDK received ITMS-91053 for mach_absolute_time, which the app's own code never calls",
+          "source": "https://github.com/firebase/firebase-ios-sdk/issues/12557",
+          "root_cause": "Firebase Performance calls mach_absolute_time internally; the declaration requirement follows the binary, not the first-party source, so the app must declare NSPrivacyAccessedAPICategorySystemBootTime with reason 35F9.1 even though no app code reaches it",
+          "itms": "ITMS-91053"
+        },
+        {
+          "symptom": "Flutter app using the Datadog SDK received ITMS-91053 although the app declared its own required-reason APIs correctly",
+          "source": "https://github.com/DataDog/dd-sdk-flutter/issues/587",
+          "root_cause": "Third-party SDKs must each ship their own PrivacyInfo.xcprivacy; an SDK version predating May 2024 enforcement has none, and the app team must upgrade the SDK or carry the declarations at app level",
+          "itms": "ITMS-91053"
+        }
+      ],
+      "statements": [
+        {"source": "justinperea", "says": "3EC4.1 belongs to NSPrivacyAccessedAPICategoryActiveKeyboards and is used for customising UI based on active keyboards.", "stricter_than_apple": false},
+        {"source": "cruisediary", "says": "3EC4.1 belongs to NSPrivacyAccessedAPICategoryDeviceID and is required for UIDevice.identifierForVendor.", "stricter_than_apple": true}
+      ]
+    },
+    {
+      "id": "usage-description-missing",
+      "title": "Protected API called with no matching usage-description key in Info.plist",
+      "guideline": "5.1.1",
+      "severity": "critical",
+      "verifiability": "PROVEN",
+      "why": "iOS terminates the app the moment a protected API is reached with no usage-description string present. Review reproduces it as a launch crash, which is rejected under app completeness as well as privacy.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "symbol", "file_class": "swift", "pattern": "AVCaptureDevice|CLLocationManager|CNContactStore|PHPhotoLibrary|HKHealthStore|CBCentralManager|CMMotionManager|SFSpeechRecognizer|EKEventStore|ATTrackingManager", "present": true, "evidence": true, "note": "The evidence line is the call site, not the Info.plist that lacks the key — the developer needs the line that will crash."},
+          {"kind": "plist_key", "file_class": "info_plist", "key": "NS*UsageDescription", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add the usage-description key this API requires to the target's Info.plist, with a string naming the concrete user-facing feature",
+        "If the API is reached only from dead code or a debug path, remove the call rather than adding a string for a feature the app does not have"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "usage-description-missing"
+    },
+    {
+      "id": "usage-description-vague",
+      "title": "Usage-description string does not say what the data is used for",
+      "guideline": "5.1.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Apple rejects purpose strings that restate the permission instead of naming the feature. \"This app needs camera access\" tells the user nothing they did not learn from the dialog title.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "plist_value", "file_class": "info_plist", "key": "NS*UsageDescription", "pattern": "^.{0,25}$", "present": true, "evidence": true, "note": "Under about 25 characters a string cannot both name a feature and give a reason."},
+          {"kind": "plist_value", "file_class": "info_plist", "key": "NS*UsageDescription", "pattern": "(?i)^(we need|this app needs|needed|required|for .{0,12}$)", "present": true, "note": "Restates the permission rather than the purpose."}
+        ]
+      },
+      "resolutions": [
+        "Rewrite the string to name the feature and the benefit — what breaks without the permission, in the user's terms"
+      ],
+      "sources": ["justinperea", "safaiyeh"],
+      "guidance": "usage-description-vague"
+    },
+    {
+      "id": "att-usage-description-missing",
+      "title": "App Tracking Transparency requested with no NSUserTrackingUsageDescription",
+      "guideline": "5.1.2",
+      "severity": "critical",
+      "verifiability": "PROVEN",
+      "why": "Calling ATTrackingManager without the tracking usage-description string means the prompt never appears, so the app either tracks without consent or silently loses the IDFA. Both are rejections.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "symbol", "file_class": "swift", "pattern": "ATTrackingManager", "present": true, "evidence": true},
+          {"kind": "plist_key", "file_class": "info_plist", "key": "NSUserTrackingUsageDescription", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add NSUserTrackingUsageDescription to Info.plist, naming what is tracked and what the user gets for it",
+        "If the app does not actually track, remove the ATTrackingManager call and any advertising identifier use with it"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "att-usage-description-missing"
+    },
+    {
+      "id": "att-prompt-at-launch",
+      "title": "Tracking permission requested before the user has seen any value",
+      "guideline": "5.1.2",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Apple rejects tracking prompts shown before the user understands what the app does. A request inside application(_:didFinishLaunchingWithOptions:) fires before any screen has rendered.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "didFinishLaunchingWithOptions[\\s\\S]{0,600}?requestTrackingAuthorization", "present": true, "evidence": true, "note": "Proximity in the same method body, not merely in the same file."}
+        ]
+      },
+      "resolutions": [
+        "Move the ATT request to a point after the user has completed onboarding or reached the feature that depends on tracking",
+        "Show a pre-permission explainer screen first, then request"
+      ],
+      "sources": ["cruisediary", "safaiyeh"],
+      "guidance": "att-prompt-at-launch",
+      "cases": [
+        {
+          "symptom": "ATT dialog re-prompted on every launch after an update, and the app was rejected for a permission loop",
+          "source": "https://developer.apple.com/documentation/apptrackingtransparency/attrackingmanager",
+          "root_cause": "Tracking authorisation status carried over from the prior binary's metadata; the app re-requested instead of reading the existing status, so users saw a dialog they had already answered"
+        }
+      ]
+    },
+    {
+      "id": "account-deletion-absent",
+      "title": "App creates accounts but offers no in-app deletion path",
+      "guideline": "5.1.1",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Any app supporting account creation must let the user start account deletion from inside the app. A support-email link or a website form does not satisfy it.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(createUser|signUp|register(User|Account)|createAccount)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(deleteAccount|accountDeletion|deleteUser|closeAccount)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add an in-app account deletion flow that deletes the account and its data, reachable without contacting support",
+        "If the app only authenticates against an account created elsewhere and creates none itself, this does not apply — confirm no sign-up path exists"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "account-deletion-absent",
+      "cases": [
+        {
+          "symptom": "App offered \"Deactivate Account\" but not true deletion and was rejected",
+          "source": "https://developer.apple.com/support/offering-account-deletion-in-your-app/",
+          "root_cause": "Deactivation suspends access while retaining the account and its data; the guideline requires deletion of the account record itself, so a reversible disable does not satisfy it"
+        }
+      ]
+    },
+    {
+      "id": "siwa-token-revocation-missing",
+      "title": "Sign in with Apple used, but account deletion does not revoke the Apple token",
+      "guideline": "5.1.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "An app offering Sign in with Apple must call Apple's token revocation endpoint when the user deletes their account. Deleting the local record while leaving the credential live is treated as incomplete deletion.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "symbol", "file_class": "swift", "pattern": "ASAuthorizationAppleIDProvider", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(deleteAccount|accountDeletion)", "present": true},
+          {"kind": "regex", "file_class": "any", "pattern": "(?i)(revoke|/auth/revoke)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Call Apple's /auth/revoke endpoint with the stored refresh token as part of the deletion flow",
+        "Store the refresh token at sign-in time if it is not being kept — revocation cannot be performed without it"
+      ],
+      "sources": ["cruisediary"],
+      "guidance": "siwa-token-revocation-missing",
+      "cases": [
+        {
+          "symptom": "Account deletion rejected for an app using Sign in with Apple that did not revoke the Apple identity token",
+          "source": "https://developer.apple.com/documentation/technotes/tn3194-oauth-user-token-revocation",
+          "root_cause": "Apple requires the token be revoked so the credential cannot be reused; deletion that leaves a live Apple credential is judged incomplete regardless of what happened to the app's own record"
+        }
+      ]
+    },
+    {
+      "id": "sensitive-data-in-userdefaults",
+      "title": "Credentials or tokens stored in UserDefaults rather than the Keychain",
+      "guideline": "5.1.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "UserDefaults is an unencrypted plist inside the app container and is included in unencrypted backups. Apple treats storing credentials there as a failure to protect user data.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)UserDefaults[\\s\\S]{0,120}?(password|token|secret|apiKey|credential|ssn|creditCard)", "present": true, "evidence": true, "note": "Match the key name, not the value — a key called cachedTokenCount is a false positive worth checking before emitting."}
+        ]
+      },
+      "resolutions": [
+        "Move the value to the Keychain with an appropriate accessibility class",
+        "If the value is not actually a secret, rename the key so it does not read as one"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "sensitive-data-in-userdefaults"
+    },
+    {
+      "id": "third-party-sdk-privacy-manifest-missing",
+      "title": "A dependency on Apple's commonly-used-SDK list ships no privacy manifest",
+      "guideline": "5.1.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Apple publishes a list of SDKs that must each ship a privacy manifest and a signature. A dependency on that list at a version predating the requirement fails validation even when the app's own manifest is complete.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "dependency", "file_class": "package_manifest", "pattern": "(?i)(firebase|abseil|grpc|nanopb|openssl|reachability|rxswift|sdwebimage|snapkit|lottie|alamofire|connectivity)", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "Upgrade the dependency to a version shipping PrivacyInfo.xcprivacy and a signature",
+        "Where no such version exists, carry the SDK's required-reason declarations in the app-level manifest and record why"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "third-party-sdk-privacy-manifest-missing"
+    },
+    {
+      "id": "privacy-policy-url-absent",
+      "title": "Privacy policy URL is present in App Store Connect and reachable",
+      "guideline": "5.1.1",
+      "severity": "critical",
+      "verifiability": "MANUAL",
+      "why_manual": "The privacy policy URL lives in App Store Connect metadata and its reachability depends on a live server. Neither is in the repository, and a URL string found in source proves nothing about what App Store Connect holds.",
+      "why": "Every app must carry a privacy policy link in its App Store Connect metadata and inside the app. A dead or placeholder URL is one of the most common metadata rejections.",
+      "detection": {"match": "all_of", "clauses": [{"kind": "always", "present": true}]},
+      "resolutions": [
+        "Confirm the App Store Connect privacy policy URL resolves and describes the data this build actually collects"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "privacy-policy-url-absent"
+    },
+    {
+      "id": "privacy-nutrition-labels-match-build",
+      "title": "App Store Connect privacy labels match what this build collects",
+      "guideline": "5.1.2",
+      "severity": "critical",
+      "verifiability": "MANUAL",
+      "why_manual": "Nutrition labels are answers given in App Store Connect. The audit can see which SDKs are linked but not what was declared, so the comparison the guideline demands cannot be completed from the repository alone.",
+      "why": "Apple compares declared data collection against observed network behaviour. A label that omits a category an integrated SDK collects is treated as a misrepresentation rather than an oversight.",
+      "detection": {"match": "all_of", "clauses": [{"kind": "always", "present": true}]},
+      "resolutions": [
+        "Review the privacy nutrition labels against every SDK this build links, including ones added since the last submission"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "privacy-nutrition-labels-match-build"
+    },
+    {
+      "id": "export-compliance-undeclared",
+      "title": "ITSAppUsesNonExemptEncryption is not declared in Info.plist",
+      "guideline": null,
+      "severity": "warning",
+      "verifiability": "PROVEN",
+      "why": "Without this key every upload prompts for an export-compliance answer, and an incorrect answer blocks the build from distribution. Declaring it in Info.plist settles the question at build time.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "file", "file_class": "info_plist", "present": true, "evidence": true},
+          {"kind": "plist_key", "file_class": "info_plist", "key": "ITSAppUsesNonExemptEncryption", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add ITSAppUsesNonExemptEncryption to Info.plist — false where the app uses only HTTPS and platform-provided cryptography",
+        "Where the app ships its own non-exempt cryptography, declare true and attach the export documentation App Store Connect asks for"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "export-compliance-undeclared"
+    },
+    {
+      "id": "app-transport-security-disabled",
+      "title": "App Transport Security disabled globally",
+      "guideline": "5.1.1",
+      "severity": "warning",
+      "verifiability": "PROVEN",
+      "why": "NSAllowsArbitraryLoads turns off transport security for every connection the app makes. Apple asks for a justification and rejects builds that disable it for convenience rather than for a named legacy endpoint.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "plist_value", "file_class": "info_plist", "key": "NSAppTransportSecurity.NSAllowsArbitraryLoads", "equals": "true", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "Remove NSAllowsArbitraryLoads and add an NSExceptionDomains entry for the specific host that needs it",
+        "Where the app loads arbitrary user-supplied web content, use NSAllowsArbitraryLoadsInWebContent instead, which is scoped to web views"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "app-transport-security-disabled"
+    },
+    {
+      "id": "data-collection-without-consent",
+      "title": "Analytics or advertising SDK initialised before any consent gate",
+      "guideline": "5.1.2",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Personal data may not be transmitted before the user consents. An analytics SDK started in the launch path collects and sends before any consent UI has rendered.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "didFinishLaunchingWithOptions[\\s\\S]{0,600}?(FirebaseApp\\.configure|Analytics\\.|Mixpanel|Amplitude|Segment|AppsFlyer|Adjust)", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "Defer SDK initialisation until after the consent decision is known",
+        "Where the SDK must start early, configure it in a mode that buffers without transmitting until consent is granted"
+      ],
+      "sources": ["safaiyeh", "cruisediary"],
+      "guidance": "data-collection-without-consent"
+    }
+  ]
+}

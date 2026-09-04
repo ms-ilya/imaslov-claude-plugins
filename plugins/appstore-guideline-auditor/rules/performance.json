@@ -1,0 +1,454 @@
+{
+  "category": "performance",
+  "rules": [
+    {
+      "id": "launch-screen-absent",
+      "title": "Target declares no launch screen",
+      "guideline": "2.1",
+      "severity": "critical",
+      "verifiability": "PROVEN",
+      "why": "An app with no launch screen is letterboxed at a legacy resolution on modern devices. Review sees an app that does not fill the screen and rejects it as incomplete.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "plist_key", "file_class": "info_plist", "key": "UILaunchScreen", "present": false, "evidence": true},
+          {"kind": "plist_key", "file_class": "info_plist", "key": "UILaunchStoryboardName", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add a UILaunchScreen dictionary to Info.plist, empty if the launch screen is a plain background",
+        "Or set UILaunchStoryboardName to a launch storyboard included in the target's resources"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "launch-screen-absent"
+    },
+    {
+      "id": "webview-deprecated-class",
+      "title": "UIWebView used instead of WKWebView",
+      "guideline": "2.5.6",
+      "severity": "critical",
+      "verifiability": "PROVEN",
+      "why": "Apple requires the current WebKit framework for apps that browse the web. UIWebView was removed from the SDK and its presence is caught by automated validation as ITMS-90809.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "symbol", "file_class": "swift", "pattern": "UIWebView", "present": true, "evidence": true, "note": "Match the type name, not the substring — WKWebViewConfiguration must not fire this."}
+        ]
+      },
+      "resolutions": [
+        "Replace UIWebView with WKWebView, including in any XIB or storyboard that instantiates it"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "webview-deprecated-class",
+      "cases": [
+        {
+          "symptom": "Upload rejected with ITMS-90809: Deprecated API Usage — the app still linked UIWebView",
+          "source": "https://developer.apple.com/documentation/uikit/uiwebview",
+          "root_cause": "UIWebView was deprecated in iOS 12 and removed from the SDK; Apple's automated pipeline rejects binaries referencing it, including references reaching the binary only through a dependency",
+          "itms": "ITMS-90809"
+        }
+      ]
+    },
+    {
+      "id": "private-api-usage",
+      "title": "Symbol matching a known private API appears in source",
+      "guideline": "2.5.1",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Apps may only use public APIs. Apple's static scanner matches selector names, so a private selector reached through a string or a runtime call is still found.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?<![A-Za-z])_(setStatusBarHidden|setOrientation|UIApplicationSuspend|performMemoryWarning)\\b", "present": true, "evidence": true, "note": "Apple's scanner matches SELECTOR NAMES, not intent, so a developer's own method that happens to share a name with a private selector is a genuine false positive. Confirm the symbol resolves to a system class before emitting, and downgrade to PROBABLE where it resolves to app-owned code."},
+          {"kind": "regex", "file_class": "swift", "pattern": "(valueForKey|performSelector|NSSelectorFromString)\\s*\\(\\s*\"_", "present": true, "note": "A leading underscore in a runtime-resolved selector string is the shape Apple's scanner looks for."}
+        ]
+      },
+      "resolutions": [
+        "Replace the call with a public API, or remove it",
+        "Where the symbol is app-owned and merely shares a name with a private selector, rename it so the scanner does not match"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "private-api-usage"
+    },
+    {
+      "id": "arbitrary-code-download",
+      "title": "Executable code is downloaded or evaluated at runtime",
+      "guideline": "2.5.2",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Apps must be self-contained and may not download or execute code that changes their features. This is one of the few guidelines Apple treats as grounds for removal rather than rejection.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(JSPatch|dlopen|NSClassFromString\\s*\\(\\s*[a-zA-Z]|evaluateJavaScript\\s*\\(\\s*(remote|downloaded|fetched))", "present": true, "evidence": true, "note": "evaluateJavaScript against bundled, app-authored script is normal and must not fire; the concern is script fetched from a server."}
+        ]
+      },
+      "resolutions": [
+        "Ship the logic in the binary and gate it with a remote configuration flag rather than downloading the logic itself",
+        "Where the code is bundled and merely loaded dynamically, confirm nothing on the path can be replaced from the network"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "arbitrary-code-download"
+    },
+    {
+      "id": "beta-or-placeholder-version",
+      "title": "Version string or app name marks the build as a beta or demo",
+      "guideline": "2.2",
+      "severity": "warning",
+      "verifiability": "PROVEN",
+      "why": "Demos, betas and trial versions belong on TestFlight, not the App Store. A version string of 0.x or a name containing beta is read as an unfinished submission.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "plist_value", "file_class": "info_plist", "key": "CFBundleShortVersionString", "pattern": "(?i)^0\\.|\\b(beta|alpha|rc|dev)\\b", "present": true, "evidence": true},
+          {"kind": "plist_value", "file_class": "info_plist", "key": "CFBundleDisplayName", "pattern": "(?i)\\b(beta|alpha|demo|test|staging)\\b", "present": true}
+        ]
+      },
+      "resolutions": [
+        "Set CFBundleShortVersionString to a 1.0 or later release version",
+        "Remove beta, demo or staging wording from the display name"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "beta-or-placeholder-version"
+    },
+    {
+      "id": "placeholder-content-shipping",
+      "title": "Placeholder text or unimplemented screens remain in shipping code",
+      "guideline": "2.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "App completeness is the single largest cause of rejection by volume. Lorem ipsum, a Coming Soon screen or a TODO in a user-visible string is read as an unfinished app.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)\"[^\"]*(lorem ipsum|coming soon|placeholder|TODO:|FIXME:|not implemented)[^\"]*\"", "present": true, "evidence": true, "note": "Only user-visible string literals. A TODO in a comment is not shipped content and must not fire."}
+        ]
+      },
+      "resolutions": [
+        "Replace the placeholder with final content",
+        "Remove the screen from navigation if the feature is not in this release"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "placeholder-content-shipping"
+    },
+    {
+      "id": "hardcoded-ipv4-address",
+      "title": "A literal IPv4 address is used for a network endpoint",
+      "guideline": "2.5.5",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Apps must be fully functional on IPv6-only networks, and Apple reviews on one. A hardcoded IPv4 literal cannot resolve there, so the app fails review while working perfectly for the developer.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "\"[^\"]*\\b(?!127\\.0\\.0\\.1\\b|0\\.0\\.0\\.0\\b)((25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])\\b", "present": true, "evidence": true, "note": "Matches an IPv4 anywhere inside a string literal, not just at its start — the common case is an address inside a URL, where http:// sits between the quote and the digits. Loopback and 0.0.0.0 are excluded. A version string such as 1.2.3.4 in a non-URL context is a false positive worth confirming."}
+        ]
+      },
+      "resolutions": [
+        "Replace the literal address with a hostname that has both A and AAAA records",
+        "Where the address is test-only, move it behind a debug configuration that does not ship"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "hardcoded-ipv4-address"
+    },
+    {
+      "id": "background-mode-unjustified",
+      "title": "A background mode is declared that no code appears to use",
+      "guideline": "2.5.4",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Background modes may only be used for their intended purpose. Apple rejects apps declaring a mode — most often location or audio — with no corresponding functionality, because it reads as an attempt to stay alive.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "plist_key", "file_class": "info_plist", "key": "UIBackgroundModes", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(allowsBackgroundLocationUpdates|AVAudioSession|beginBackgroundTask|BGTaskScheduler|PKPushRegistry)", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Remove the background mode the app does not use",
+        "Or implement the functionality the declared mode exists for, and be ready to describe it in review notes"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "background-mode-unjustified"
+    },
+    {
+      "id": "hidden-or-dormant-feature",
+      "title": "A remote flag gates functionality that review cannot see",
+      "guideline": "2.3.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Apps may not include hidden, dormant or undocumented features. A feature behind a server-controlled flag is functionality review did not evaluate, and enabling it after approval is grounds for removal.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(isReviewMode|appStoreReview|isAppleReviewer|reviewerMode|hideForReview|isUnderReview)", "present": true, "evidence": true, "note": "A flag whose NAME references App Review is the strong signal. A generic feature flag is normal engineering and must not fire on its own."}
+        ]
+      },
+      "resolutions": [
+        "Remove logic that changes behaviour when the reviewer is detected",
+        "Where the flag is a legitimate rollout control, document it in review notes and ensure the reviewed build shows the shipped behaviour"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "hidden-or-dormant-feature"
+    },
+    {
+      "id": "ipad-support-disabled",
+      "title": "Target is iPhone-only",
+      "guideline": "2.4.1",
+      "severity": "suggestion",
+      "verifiability": "PROVEN",
+      "why": "Apple asks that iPhone apps run on iPad wherever possible. This is a recommendation rather than a rejection, so it is reported as a quality signal, not a blocker.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "build_setting", "key": "TARGETED_DEVICE_FAMILY", "equals": "1", "present": true, "evidence": true}
+        ]
+      },
+      "resolutions": [
+        "Set TARGETED_DEVICE_FAMILY to 1,2 and verify the layout on iPad before submitting",
+        "Leave iPhone-only if the app depends on hardware iPad lacks, and expect a reviewer to check that it does"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "ipad-support-disabled"
+    },
+    {
+      "id": "availability-check-missing",
+      "title": "An API newer than the deployment target is called without an availability check",
+      "guideline": "2.5.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "Calling a symbol the deployment target predates crashes on the older OS. Review tests on more than one OS version, and a crash there is rejected under app completeness as well as this guideline.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "build_setting", "key": "IPHONEOS_DEPLOYMENT_TARGET", "present": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "@available\\(iOS ([0-9]+)", "present": false, "evidence": true, "note": "Only meaningful where the source uses APIs above the deployment target; the subagent must confirm at least one such symbol before emitting."}
+        ]
+      },
+      "resolutions": [
+        "Wrap the call in if #available(iOS n, *) and provide a path for older versions",
+        "Or raise IPHONEOS_DEPLOYMENT_TARGET to the version the API requires"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "availability-check-missing"
+    },
+    {
+      "id": "app-icon-incomplete",
+      "title": "App icon asset is missing or has an alpha channel",
+      "guideline": "2.1",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "A missing or transparent app icon fails automated validation on upload. Transparency in particular is accepted by Xcode and rejected by App Store Connect.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "file", "file_class": "asset_catalog", "present": false, "evidence": true},
+          {"kind": "build_setting", "key": "ASSETCATALOG_COMPILER_APPICON_NAME", "present": false}
+        ]
+      },
+      "resolutions": [
+        "Add an AppIcon set with a 1024x1024 App Store icon and no alpha channel",
+        "Set ASSETCATALOG_COMPILER_APPICON_NAME on the target to the icon set's name"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "app-icon-incomplete"
+    },
+    {
+      "id": "ipad-layout-fixed-dimensions",
+      "title": "Layout uses hardcoded device dimensions rather than size classes",
+      "guideline": "2.4.1",
+      "severity": "warning",
+      "verifiability": "PROBABLE",
+      "why": "A layout built on literal screen dimensions breaks in Split View and on device sizes it was not written for. This is the layout defect reviewers most often reproduce on iPad.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(UIScreen\\.main\\.bounds\\.(width|height)\\s*[-*/+]|\\b(375|414|390|428|768|1024)\\.0\\b)", "present": true, "evidence": true, "note": "UIScreen.main.bounds read once for a full-screen background is normal; arithmetic against it to position content is the pattern that breaks."}
+        ]
+      },
+      "resolutions": [
+        "Lay out against the safe area and size classes rather than absolute screen dimensions",
+        "Verify the layout in Split View and Slide Over on iPad before submitting"
+      ],
+      "sources": ["cruisediary"],
+      "guidance": "ipad-layout-fixed-dimensions"
+    },
+    {
+      "id": "app-group-identifier-mismatch",
+      "title": "App and extension declare different App Group identifiers",
+      "guideline": "2.1",
+      "severity": "warning",
+      "verifiability": "PROVEN",
+      "why": "A widget or extension reading a shared container under a different group identifier silently gets nothing. Review sees a widget that never populates, which is rejected as incomplete functionality.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "entitlement", "file_class": "entitlements", "key": "com.apple.security.application-groups", "present": true, "evidence": true, "note": "Compare the value across every shipping target; the finding exists only when two targets disagree."}
+        ]
+      },
+      "resolutions": [
+        "Use the same App Group identifier in every target that shares the container",
+        "Where the divergence is intentional, confirm no target reads data another target writes"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "app-group-identifier-mismatch"
+    },
+    {
+      "id": "url-scheme-reserved-collision",
+      "title": "A declared URL scheme collides with a scheme Apple reserves",
+      "guideline": "2.5.1",
+      "severity": "warning",
+      "verifiability": "PROVEN",
+      "why": "Registering a scheme the system owns, or querying prefs:root= to open Settings, is treated as using a non-public interface.",
+      "detection": {
+        "match": "any_of",
+        "clauses": [
+          {"kind": "plist_value", "file_class": "info_plist", "key": "CFBundleURLTypes", "pattern": "^(http|https|mailto|tel|sms|facetime|itms|prefs|app-settings)$", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "\"(prefs:root=|App-Prefs:)", "present": true}
+        ]
+      },
+      "resolutions": [
+        "Rename the scheme to one namespaced to the app, such as the reverse-DNS bundle identifier",
+        "Replace prefs:root= with UIApplication.openSettingsURLString, which is the public route to the app's own settings"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "url-scheme-reserved-collision"
+    },
+    {
+      "id": "facial-recognition-wrong-framework",
+      "title": "Face-based account authentication built on ARKit or a camera API",
+      "guideline": "2.5.13",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "Apps using facial recognition for account authentication must use LocalAuthentication, not ARKit or raw camera capture. Rolling your own face auth is a rejection regardless of how well it works.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(ARFaceTrackingConfiguration|ARFaceAnchor|VNDetectFaceLandmarks)", "present": true, "evidence": true},
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(login|signIn|authenticate|unlock)", "present": true, "note": "Face tracking for an avatar, a filter or a measurement is legitimate. The rule is about face data used to AUTHENTICATE, which the subagent must confirm."}
+        ]
+      },
+      "resolutions": [
+        "Use LAContext with .deviceOwnerAuthenticationWithBiometrics for authentication",
+        "Where the face tracking drives a feature rather than a login, no change is needed — confirm the two paths do not join"
+      ],
+      "sources": ["justinperea"],
+      "guidance": "facial-recognition-wrong-framework"
+    },
+    {
+      "id": "metadata-screenshots-accurate",
+      "title": "Screenshots show this build in use, at every required size",
+      "guideline": "2.3.3",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "Screenshots are uploaded to App Store Connect. The repository does not contain them and cannot know which ones are attached to this version.",
+      "why": "Screenshots must show the app in use rather than a title card or a device frame with marketing copy, and must be current for the build under review.",
+      "detection": {"match": "all_of", "clauses": [{"kind": "always", "present": true}]},
+      "resolutions": [
+        "Retake screenshots from this build on the current required device sizes, showing the app actually running"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "metadata-screenshots-accurate"
+    },
+    {
+      "id": "metadata-name-keywords-accurate",
+      "title": "App name, subtitle and keywords describe what the app does",
+      "guideline": "2.3.7",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "Name, subtitle and keywords live in App Store Connect metadata, not in the bundle.",
+      "why": "Apple rejects names and keywords that claim functionality the app lacks, reference competitors, or stuff irrelevant terms.",
+      "detection": {"match": "all_of", "clauses": [{"kind": "always", "present": true}]},
+      "resolutions": [
+        "Check the name, subtitle and keyword list against what this build actually does, and remove competitor and unrelated terms"
+      ],
+      "sources": ["justinperea", "cruisediary", "safaiyeh"],
+      "guidance": "metadata-name-keywords-accurate"
+    },
+    {
+      "id": "metadata-whats-new-accurate",
+      "title": "What's New text describes this submission",
+      "guideline": "2.3.12",
+      "severity": "suggestion",
+      "verifiability": "MANUAL",
+      "why_manual": "Release notes are entered per version in App Store Connect.",
+      "why": "What's New must describe the changes in this version. Carrying the previous version's text over is a metadata inaccuracy.",
+      "detection": {"match": "all_of", "clauses": [{"kind": "always", "present": true}]},
+      "resolutions": [
+        "Write release notes describing what changed in this build"
+      ],
+      "sources": ["safaiyeh"],
+      "guidance": "metadata-whats-new-accurate"
+    },
+    {
+      "id": "metadata-category-and-rating",
+      "title": "Category and age rating match the app's actual content",
+      "guideline": "2.3.5",
+      "severity": "warning",
+      "verifiability": "MANUAL",
+      "why_manual": "Category selection and the age-rating questionnaire are answered in App Store Connect.",
+      "why": "Choosing a category the app does not fit, or under-declaring the age rating, are both metadata rejections and both are checked by a human reviewer.",
+      "detection": {"match": "all_of", "clauses": [{"kind": "always", "present": true}]},
+      "resolutions": [
+        "Confirm the primary category matches the app's main function, and that the age-rating answers reflect the content this build ships"
+      ],
+      "sources": ["safaiyeh", "cruisediary"],
+      "guidance": "metadata-category-and-rating"
+    },
+    {
+      "id": "review-account-credentials",
+      "title": "Demo account credentials are supplied for a login-gated app",
+      "guideline": "2.1",
+      "severity": "critical",
+      "verifiability": "MANUAL",
+      "why_manual": "Demo credentials live in the App Store Connect review-notes field and their validity depends on a live backend. Neither is in the repository.",
+      "why": "An app behind a login must give review a working account. A missing or expired demo account is one of the fastest rejections there is, and it is entirely avoidable.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {"kind": "regex", "file_class": "swift", "pattern": "(?i)(signIn|login|authenticate)", "present": true}
+        ]
+      },
+      "resolutions": [
+        "Provide a working demo account in App Store Connect review notes, and verify it can sign in on the day of submission"
+      ],
+      "sources": ["justinperea", "cruisediary"],
+      "guidance": "review-account-credentials"
+    },
+    {
+      "id": "recording-without-consent-indicator",
+      "title": "Recording or streaming user activity without explicit consent and a visible indicator",
+      "guideline": "2.5.14",
+      "severity": "critical",
+      "verifiability": "PROBABLE",
+      "why": "2.5.14 requires explicit consent and a clear visual or audible indicator whenever an app records, logs or otherwise makes a record of user activity — including a screen, camera or microphone feed sent off the device. A capture pipeline with no consent prompt and no on-screen indicator is the shape this clause was written for.",
+      "detection": {
+        "match": "all_of",
+        "clauses": [
+          {
+            "kind": "regex",
+            "file_class": "swift",
+            "pattern": "\\b(RPScreenRecorder|AVAssetWriter|AVCaptureMovieFileOutput|AVCaptureVideoDataOutput|AVCaptureAudioDataOutput|RTCVideoTrack|RTCPeerConnection|startRecording|startCapture)\\b",
+            "present": true,
+            "evidence": true,
+            "note": "A capture API used entirely on-device and shown back to the user in the same view — a camera preview, an AR passthrough — is not a recording of user activity. What 2.5.14 is about is a record that persists or leaves the device. AVCaptureVideoDataOutput driving an ARKit or Vision pipeline frame by frame, with no writer and no peer connection, is the common false positive."
+          },
+          {
+            "kind": "regex",
+            "file_class": "swift",
+            "pattern": "(?i)(recordingIndicator|isRecording|consentToRecord|recordingConsent|AVAudioSession.*record|recordingBanner)",
+            "present": false
+          }
+        ]
+      },
+      "resolutions": [
+        "Ask for explicit consent before the capture starts, and record that the user gave it",
+        "Show a visible or audible indicator for as long as the capture runs, in the app's own UI rather than relying on the system status indicator alone",
+        "If the capture never persists and never leaves the device, no consent flow is required — confirm that is the case rather than assuming it"
+      ],
+      "sources": ["apple"],
+      "guidance": "recording-without-consent-indicator"
+    }
+  ]
+}

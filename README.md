@@ -70,6 +70,38 @@ Individual stage commands for debugging, partial re-runs, or splitting across se
 
 ---
 
+### App Store compliance
+
+#### [appstore-guideline-auditor](./plugins/appstore-guideline-auditor)
+
+Audits a native iOS Xcode project for App Store rejection risks against a checked rule catalogue. Read-only: it modifies nothing that was already in the project and creates exactly one file, its report.
+
+Distinct from the two review plugins above. They ask whether your Swift is good; this asks whether Apple will reject it.
+
+- Every finding carries **two independent grades** — a severity, and how firmly code evidence supports it: `PROVEN` (a file and line, or a required thing confirmed absent), `PROBABLE` (the pattern matched but the finding says *which* context it could not confirm), `MANUAL` (undecidable from code — routed to a checklist, never into the findings list)
+- Nothing is dropped for being uncertain; uncertainty is labelled, so a wide net does not cost you a report where a guess and a fact look identical
+- **Citations are checked, not copied.** Apple reuses and retires guideline numbers — 2.5.10 is now *intentionally omitted*, and 4.5.5 went from Push Notifications to Game Center Player IDs. No rule enters the catalogue until its number resolves against Apple's text, and each run re-checks against Apple's current published text
+- Resolves Apple's guidelines and policy pages by **search, then fetch**, so a requirement announced after the plugin shipped is still reached. A run that cannot reach them still completes, recording per source whether each citation was verified
+- **Every shipping target separately** — ITMS-91053 is evaluated per target by an automated scanner, so a widget extension is a separate product and gets its own privacy-manifest check
+- Regional and dated requirements (Brazil, EU, Korea, the September 2026 age-rating mandate) name the storefront or date they apply to and the source they were verified against
+- Refuses cross-platform projects by name rather than auditing them badly — Flutter, React Native, Expo, Kotlin Multiplatform, .NET MAUI, Cordova/Ionic, Capacitor, Unity
+- **68 rules, derived rather than copied** — merged from 249 named rule topics across four MIT-licensed upstream sources, re-authored with executable detection patterns, re-graded against one severity vocabulary in place of four incompatible ones, and re-cited against Apple's text, which contradicts two of the four sources on Guideline 4.8
+- **Registers no hooks and ships nothing that only checks itself.** Every file in the installed plugin runs during an audit
+
+**Commands:**
+
+| Command | What it does |
+|---------|--------------|
+| `/appstore-guideline-auditor:appstore-audit [path]` | Audit an Xcode project; `--out <path>` to redirect the report |
+
+**Produces:** `.appstore-audit/report.md` in the audited project — a readiness verdict, findings grouped by target, and an App Store Connect checklist generated from what the scan actually found.
+
+**Reaches the network.** Declared in the skill's `compatibility` field so you learn it before running, not after.
+
+**Works with:** native iOS/Swift Xcode projects only
+
+---
+
 ### Planning and specification
 
 #### [feature-spec](./plugins/feature-spec)
