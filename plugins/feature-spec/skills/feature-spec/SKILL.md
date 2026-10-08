@@ -1,9 +1,8 @@
 ---
 name: feature-spec
-description: "Bounded requirements interview that ends in a critic-verified feature spec. Use when planning a feature before any code is written, or to amend an existing spec."
-argument-hint: "[feature idea | --prior-art <doc>] [--fast|--deep] [--resume] [--scope <path>]"
+description: "Turns what the user provides into a critic-verified feature spec: builds a design record from the input, asks only about what is still unclear, then drafts, critiques and writes. Use when planning a feature before any code is written, or to amend an existing spec."
+argument-hint: "<idea and/or documents: a brief, notes, an analysis> [--resume] [--scope <path>]"
 disable-model-invocation: true
-effort: high
 allowed-tools:
   - Read
   - Write
@@ -12,346 +11,282 @@ allowed-tools:
   - Grep
   - Agent
   - AskUserQuestion
-  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/bump-protocol.sh *)
+  - SendMessage
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-tree.sh *)
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-spec.sh *)
-  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh *)
   - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-packet.sh *)
-  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-traceability.sh *)
-  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/spec-diff.sh *)
-  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/undo-round.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/publish-spec.sh *)
 hooks:
   PostToolUse:
     - matcher: "Write|Edit"
       hooks:
         - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/scripts/hook-validate.sh"
+          command: 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/hook-validate.sh"'
 ---
 
-# ABOUTME: Orchestrator for the bounded requirements interview that produces a critic-verified feature spec.
+# ABOUTME: Turns the user's input into a critic-verified feature spec — intake, clarify only what is unclear, strategy, draft, critique, publish.
 
-You run a **bounded, resumable requirements interview** and turn it into a
-verified spec. Ground → grill under a coverage budget → choose a strategy →
-promote decisions → draft → critique → write.
+You turn what the user already has into a verified feature spec: take in their
+input → build the design record → ask only about what is still unclear → choose a
+strategy → promote decisions → draft → critique → publish.
 
-You stop at the spec. No implementation, no task breakdown, no estimates.
+The run adapts to the input. A complete brief needs no interview and goes
+straight through. A bare idea gets up to two short rounds. You stop at the spec:
+no implementation, no task breakdown, no estimates.
 
-## Critical rules
+Everything you need is here or in the references directory,
+`${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/`. A reference file named
+below without a path is in it. Those files write the plugin's install directory
+as a `CLAUDE_PLUGIN_ROOT` variable, which is filled in only on this page: it is
+`${CLAUDE_PLUGIN_ROOT}`. Put that path in wherever a reference shows a file or a
+command.
 
-Canonical text: `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/rules.md`. Edit there, propagate to all four skills, then run `scripts/test-checks.sh`.
+**Input:** `$ARGUMENTS`
+
+## Rules
+
+The rows this skill can act on, verbatim from `rules.md`.
 
 | ID | Rule |
 |---|---|
-| **R1** | **MUST** write every answer and its rationale to `tree.md` before rendering the next round, and before any other tool call. Answers arrive in batches, so the unit is the round, not the question. |
-| **R2** | **MUST** find facts before a round, never during one. |
-| **R3** | **MUST** announce the mode, the round cap and whether a 4th round can unlock, in Phase 0. |
-| **R4** | **MUST** give every question a recommended answer and a one-line "why it matters" naming what the answer changes. |
-| **R5** | **MUST** stop grilling and draft the moment the counter guard trips. |
-| **R6** | **MUST** report counted cost when the run ends — rounds, questions, fact-finder dispatches, references loaded, critic passes. |
-| **R7** | **MUST** update the `## Protocol` counters in `tree.md` at the end of every round, before anything else. |
-| **R8** | **NEVER** ask the user something a fact-finder could look up. |
-| **R9** | **NEVER** ask more than 5 questions in one round, or run more rounds than the mode allows. |
-| **R10** | **NEVER** assert a statement in the spec that has no source tag in `tree.md`. Cut it, or mark it `[NEEDS CLARIFICATION]`. |
-| **R11** | **NEVER** state a number you cannot count. Token spend, context percentage and elapsed cost are unobservable — reporting them is fabrication. |
-| **R12** | **NEVER** block the deliverable on the critic. Two passes maximum, then write and attach the unresolved findings to `critique.md`. |
-| **R13** | **NEVER** invent a rule the project did not state. The principles gate enforces the repo's rules, not your taste. |
-| **R14** | **NEVER** write an ADR for a decision that fails any one of the three tests. |
-| **R15** | **NEVER** silently overwrite an existing spec. Offer amend / restart / read-only. |
-| **R16** | **NEVER** silently skip a phase. A skipped strategy phase is announced. |
-| **R17** | **NEVER** write outside `<specdir>/`, except the ADR directory. Every other file in the repo is read-only to you. |
-| **R18** | **MUST** cover every requirement and success criterion in the spec with at least one task, or record it under `## Not planned` with the reason it was left out. |
-| **R19** | **MUST** tag every task with the requirements it covers. Work no requirement asked for is legal, and is recorded under `## Enabling work` with what it unblocks — never left untagged. |
-| **R20** | **NEVER** plan around an unresolved `[NEEDS CLARIFICATION]` as though it were settled. Carry every marker into the plan, and mark the tasks it blocks. |
-| **R21** | **NEVER** present an implementation decision the spec did not settle as settled. It goes in `## Plan assumptions` with what reversing it would cost. |
+| **R1** | Write every decision and its rationale to `tree.md` before rendering the next round and before any other tool call: at intake for what the input already decided, then once per round. Whatever exists only in the conversation is gone after a compaction. |
+| **R2** | Find facts before a round, never during one. A prompt that is open to the user cannot be held while an agent runs. |
+| **R4** | Give every question a recommended answer and one line naming what the answer changes. Without them a round reads as a form. |
+| **R6** | Report counted cost when the run ends: clarifying rounds and critic passes. Both can be counted from the files the run wrote. |
+| **R8** | Do not ask the user what a fact-finder could look up, or what their own input already answers. One such question costs the trust every other question depends on. |
+| **R9** | Ask at most 5 questions in a round and run at most 2 rounds in a session. What is still open after that ships as `[NEEDS CLARIFICATION]`: an interview that keeps growing means the input needs work, not that the run needs more rounds. |
+| **R10** | Every requirement, success criterion, out-of-scope line and implementation constraint in the spec carries a source tag that resolves in `tree.md`. Cut anything that does not, or mark it `[NEEDS CLARIFICATION]`: a spec asserting what was never decided is the failure this plugin exists to prevent. |
+| **R11** | State no number you cannot count. Token spend, context percentage and elapsed cost cannot be observed from inside a run, so reporting one is invention. |
+| **R12** | The critic never blocks the deliverable. Two passes at most, then write, with the unresolved findings attached to the critique file. |
+| **R13** | Enforce the rules the project stated, never your own taste. A rule nobody wrote down is not a finding. |
+| **R14** | Write an ADR only for a decision that passes all three tests: hard to reverse, surprising without context, the result of a real trade-off. A long decision record is a worthless one. |
+| **R15** | Never silently overwrite an existing spec. Offer amend, restart or read-only, and wait for the choice. |
+| **R16** | Never silently skip a phase. When the clarifying phase or the strategy phase does not run, say so and say why. |
+| **R17** | Write only inside the spec root (`docs/specs/` unless the project keeps one elsewhere), plus the ADR directory. Every other file in the repository is read-only to you. |
 
-**R18–R21 govern the implementation plan, which this pipeline does not
-produce.** They are reproduced verbatim so the four skills share one rule
-block; the rules you can act on here are R1–R17.
+One thing holds in every phase. Nothing enters the record or the spec because
+it is likely. A fact about the repository was looked up, and says where. A
+decision was made by the user, and keeps their words. Anything else stays open:
+on the frontier, deferred, or marked `[NEEDS CLARIFICATION]`. An open question
+costs the user a follow-up; an invented answer costs them the feature.
 
-## Track your progress
+## The design record
 
-**Copy this checklist into your first reply and tick items as you go.** It is the
-only defence against dropping a step under load, and the round block is repeated
-per round on purpose — R1 and R7 are the two rules that slip first.
+Two directories, and the difference matters. The **spec root** holds every
+spec in the project and the shared glossary: `docs/specs/` by default. This
+feature's own directory, written `<specdir>` everywhere below, is
+`<spec root>/<YYYY-MM-DD>-<slug>/`. Dates are today's, as the session gives it.
 
-```
-feature-spec: <slug>  ·  mode: <fast|default|deep>
-- [ ] P0 resolved: dirs, stack, principles, mode announced
-- [ ] P1 grounded: agents dispatched in ONE message, facts written to tree.md
-- [ ] Round n: answers + rationale written to tree.md   (R1, before anything else)
-- [ ] Round n: ## Protocol counters updated             (R7)
-- [ ] Round n: check-tree.sh clean
-- [ ] Round n: coverage re-scored and printed
-- [ ] P3 strategy: chosen AND rejected recorded, or skip announced (R16)
-- [ ] P4 ADRs: three-part test run on each candidate
-- [ ] P5 drafted in memory, every FR/SC source-tagged   (R10)
-- [ ] P5 check-spec.sh clean
-- [ ] P6 critic dispatched with the packet, not the draft
-- [ ] P7 counted cost reported                          (R6, R11)
-```
+`<specdir>/tree.md` is the only input to drafting. You build it from whatever
+arrives; the user never has to supply one. `Next phase` in its `## Protocol`
+block names the phase to resume at: `1` when the record is created, then the
+next number as each phase completes, so a later session can pick the run up
+with `--resume`.
+A run is in progress while `<specdir>/spec.draft.md` exists and finished once
+only `spec.md` does.
 
-## The counter guard
-
-You **cannot** observe your own context usage. Never report a percentage (R11).
-The guard counts things you did. Every counter lives in `tree.md`'s
-`## Protocol` block — a tally in working memory does not survive a compaction.
-
-| Counter | Threshold | Why that number |
-|---|---|---|
-| Lines read into context | ≥ 1200 | volume, not calls — a 40-line slice and a 900-line file are not the same read |
-| Fact-finder dispatches | mode's allowance **+ 2** | `--fast` 1 · default 2 · `--deep` 4 |
-| Reference files loaded | mode's budget **+ 2** | `--fast` 7 · default and `--deep` 10 |
-| Rounds completed | ≥ 4 | |
-| Questions asked, cumulative | ≥ 22 | |
-
-**Trips when any two are at or over threshold, evaluated once, at the end of a
-round.** `bump-protocol.sh` computes all of this; never evaluate it by hand.
-
-Two thresholds are **relative to the mode**, and that is the point. `--deep`
-mandates four fact-finders and loads ten reference files, so fixed thresholds of
-3 and 7 put two counters at threshold before the interview asked anything — the
-guard scored the mode's own configuration and handed `--deep` a single round on
-any repo with a stack layer. A guard that trips on the expected case is not a
-guard.
-
-**Lines, not calls.** Context pressure is volume. Record each `Read` with
-`--read <lines>`, which bumps the read count, the line total and the maximum
-together, so the three cannot disagree.
-
-> **On trip: stop grilling immediately.** Move every open and blocked question to
-> Deferred, say plainly that you are stopping early to preserve room to draft,
-> and go to Phase 5. A spec with five open markers is a deliverable. A compacted
-> interview that never reached drafting is nothing.
-
-## Scripts
-
-Run these; do not reimplement their checks in prose.
-
-| Script | When |
-|---|---|
-| `${CLAUDE_PLUGIN_ROOT}/scripts/bump-protocol.sh <tree.md> --round …` | end of every round — owns the counters and the guard (exit 3 = just tripped) |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/check-tree.sh <tree.md>` | end of every round, after the counters |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/check-tree.sh <tree.md> --doctor` | only when the record will not parse — names the broken section and prints its repair |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/check-spec.sh <draft> --tree <tree.md> [--prev <spec being amended>]` | after drafting, before the critic |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <p1> [--single \| <p2>]` | after each critic pass, and to reconcile the two |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/make-packet.sh <spec> --tree <tree.md> [--lens <name>]` | Phase 6 — builds the critic packet; never assemble it by hand |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/make-traceability.sh <spec> --tree <tree.md>` | Phase 7 |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/undo-round.sh <tree.md>` | only when the user asks to take back the last round — strikes its answers through, returns their questions to the frontier and rewinds the counters |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/spec-diff.sh <new> <prev>` | on an amendment, after writing — renders what actually changed; `critique.md` structurally cannot show this, because the critic never sees the previous version |
-
-**The hook validates every write, closed-world:** it checks what you wrote, never
-what you have not written yet. A Phase 1 record with no coverage table and a draft
-with no scenarios both pass. A fabricated citation fails at any stage. Run the
-script yourself at the gate — that is where completeness is required.
-
-## Reference loading
-
-Load at the phase that needs it, **once**. Track what is loaded; never re-read.
-**Budget: `--fast` 5, default and `--deep` 8 — plus the stack layer's 2 on a
-Swift, TypeScript or Python repo, so 7 and 10.** The guard's threshold is
-derived from these numbers, so correcting one corrects the other.
-
-| File | Loaded at | Modes |
-|---|---|---|
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/rules.md` | never — the rules are inlined above; this is the canonical copy to edit | — |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/tree-format.md` | Phase 0 | all |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/coverage-taxonomy.md` | Phase 2, first round | all |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/frontier.md` | Phase 2, first round | default, deep |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/question-format.md` | Phase 2, first round | all |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/glossary-format.md` | Phase 2, first fuzzy term | default, deep |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/adr-format.md` | Phase 4, only if a candidate exists | default, deep |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/drafting.md` | Phase 5 — carries phases 5, 6 and 7 | all |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/spec-template.md` | Phase 5 | all |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/critic-rubric.md` | Phase 6 — **passed inline to the agent**, not loaded by you | default, deep |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/<stack>/fact-finding.md` | Phase 1, on stack detection — `swift`, `typescript` or `python` | all |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/<stack>/seams.md` | Phase 1, on stack detection | all |
-| `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/degradation.md` | on hitting a failure path | all |
-
-## Modes and arguments
-
-Load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/invocation.md` in Phase 0
-for the depth-mode table, the argument grammar, the 4th-round unlock rule and the
-**prior-art input mode**. **Once.** Both are written into `## Protocol` as soon as
-they resolve, so every later round reads the record, not the file.
-
-**When the input is an existing document rather than an idea** — a findings
-write-up, a migration plan, a design note — that is `--prior-art`, and it changes
-Phase 1's job from *summarise it* to *falsify it*. Do not skip the load: the
-grammar assumes an unformed idea, and a document handed to the ordinary path gets
-believed rather than checked.
-
-Three things are load-bearing enough to state here rather than behind a load:
-**never more than 5 rounds in any mode**, **never more than 5 questions in one
-round** (R9), and **`--fast` and `--deep` together is an error** — do not guess
-which was meant.
+A `PostToolUse` hook checks every write to the record and the draft. It checks
+what you wrote, never what you have not written yet, so a half-written record
+passes and a fabricated citation fails at any stage. Run the scripts yourself at
+the points named below: that is where completeness is required. A finding from a
+script or the hook is not a critic finding. Fix what it names and carry on.
 
 ## Phase 0 — RESOLVE
 
-Parse arguments, then **detect by looking**. The table below says *what* to
-establish, not how to find it — searching is yours to do, and how deep to look is
-a judgement about this repo that no fixed command makes correctly. A monorepo
-buries its services five directories down; a library has everything at the root.
+Load `invocation.md`.
 
-`Glob` does not reliably match `.git/`, and a project name proves nothing about
-its stack — so detect by **content**, and scope the search to the feature:
+Work out what you were given: the idea in words, and every path that names a
+document. Read the documents now; the two stop cases below and the feature's
+scope depend on what they say. A path that does not exist is named to the user
+and left out; what it would have said is unknown. Then detect the rest by
+looking. The table says what
+to establish, not how; how deep to search is a judgement about this repository.
 
 | Thing | Default | Detection wins |
 |---|---|---|
-| Spec dir | `docs/specs/` | existing `docs/specs/`, `specs/`, `.plans/` |
-| Glossary | `<specdir>/GLOSSARY.md` | never overridden — an existing root glossary or `memory-bank/` is **read**, linked, never written |
+| Spec root | `docs/specs/` | existing `docs/specs/`, `specs/`, `.plans/` |
+| Glossary | `<spec root>/GLOSSARY.md` | never overridden. An existing root glossary or `memory-bank/` is read and linked, never written |
 | ADR directory | `docs/adr/` | existing `docs/adr/`, `docs/adrs/`, `adr/` |
-| Stack layer | none | **within the feature's scope**, by content: `.swift`, `Package.swift`, `*.xcodeproj`, `*.xcworkspace` → `swift` · `tsconfig.json`, `.ts`, `.tsx` → `typescript` · `pyproject.toml`, `requirements.txt`, `.py` → `python` |
-| Principles | none | `AGENTS.md`, `CLAUDE.md`, `.claude/rules/*.md` — **an absolute or `~`-prefixed path is legal**: a machine may keep its only copy outside the repo. Record it in `## Reads` as written; it is expanded and checked, not skipped. |
-| VCS state | — | one line in the report: branch, and **whether the repo has any commits at all**. `spec-diff.sh` and the `--prev` amendment flow both assume history exists, and "there is no history" is often itself a finding the spec is about. |
+| Stack layer | none | within the feature's scope (`--scope`, or the directories the input names), by content: `.swift`, `Package.swift`, `*.xcodeproj`, `*.xcworkspace` → `swift` · `tsconfig.json`, `.ts`, `.tsx` → `typescript` · `pyproject.toml`, `requirements.txt`, `.py` → `python`. A layer is for an application in that stack: a shell script that embeds Python, or a build file, loads none. When unsure, none |
+| Principles | none | the project's `AGENTS.md`, `CLAUDE.md` and `.claude/rules/*.md`, then the user's own `AGENTS.md`, `CLAUDE.md` and `rules/*.md` under `~/.claude/` (read them by absolute path; skip them and say so if you cannot tell where home is). Project rules win where the two disagree. A rules file for a language this feature does not touch is not in force |
+| Version control | — | whether a `.git` directory sits at or above the spec root. An amendment replaces `spec.md`, so without history the previous version is gone: say so before amending |
 
-An existing slug offers three choices, never a silent overwrite (R15):
-**amend** (append a session, reopen deferred items, re-draft, strike through
-superseded answers), **restart** (archive to `tree.archived-<date>.md`), or
-**read-only** (print state, stop).
+An existing slug offers three choices (R15):
 
-Announce mode, cap and unlock (R3). Say in one line that drafting runs on the
-user's session model, that you cannot see your own context usage, and that
-`/context` shows it. Nothing is written yet — say so when you first create the
-directory.
+- **amend**: append a session to the record, reopen deferred items, strike
+  through superseded answers, draft again.
+- **restart**: copy `tree.md` to `tree.archived-<date>.md`, then start the
+  record again. The `## Sessions` line says `(restart)`.
+- **read-only**: print the state, stop.
 
-Load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/tree-format.md`.
+On amend, and on `--resume`, load `tree-format.md` now. Both work on a record
+that already exists, and a resumed run can re-enter past Phase 1, where every
+other run loads it.
 
-## Phase 1 — GROUND
+Two cases stop here, before anything is created:
 
-**On a stack detection, load that stack's two `references/<stack>/` files before
-dispatching** — they name what to look for, so loading them afterwards shapes
-nothing. Layers ship for `swift`, `typescript` and `python`.
+- **The idea is too vague to name.** Ask one clarifying question and stop. An
+  unformed idea needs an interview before it needs a spec: say so, and name
+  `/grill-me` as the tool for that. A suggestion, never a call.
+- **A one-line change with no decision in it.** Say there is nothing here a spec
+  would decide, and stop. If the user disagrees, the run goes on.
 
-**Exactly one layer loads, or none.** On a repo that is both — a Python service
-with a TypeScript front end — the layer is the one the *feature's scope* is in,
-not the one the repo has more of. When the scope spans both, ask which side the
-feature lives on before dispatching: it is one question, and it saves a round of
-questions aimed at the wrong stack.
+Otherwise say in a few lines what you received and what you resolved. Nothing is
+written in this phase.
 
-Dispatch fact-finders — **all in one message** so they run concurrently.
-Sequential dispatch multiplies the only part of the run the user waits on.
+## Phase 1 — INTAKE AND GROUND
 
-Say what is happening before dispatching, and nothing while they run. Each agent
-gets **specific** questions and the scope hint — never "sweep the repo", which
-makes an agent read the world.
+Load `tree-format.md` unless Phase 0 did: this phase creates the record, and
+that file is the shape of every entry in it.
 
-**Shape-check every return before you use it.** A fact-finder can end its turn on
-a dangling narration — *"Now let me verify Package.resolved"* — and hand back no
-report at all. A reply that does not contain `Q:` / `FACT:` / `EVIDENCE:` /
-`CONFIDENCE:` / `NOT_FOUND:` is not an answer: `SendMessage` the agent once with
-*"return the report in the schema; nothing else"*, and only then treat the
-dispatch as failed. One resume costs a round trip; a silently missing fact costs
-a wrong question built on top of it.
+Sort what each document says, and what the request itself says:
 
-**Route each question by tier** (the `Agent` tool's `model` parameter overrides
-the agent's frontmatter per dispatch):
+- **A decision the user made** becomes a `## Settled` entry tagged `(r0)`. The
+  answer keeps the input's own wording. Its `*Why:*` ends with where it came
+  from: the document's path as `## Reads` lists it and the section, or "stated
+  in the request". The hook holds the answer against that document and fails a
+  paraphrase, because the entry is what every requirement is later compared
+  with.
+- **A claim about the repository** is something to verify, not to believe. A
+  document was true when it was written.
+- **An assumption or an open question** is not a decision. It goes to the
+  frontier.
 
-- **Locate** — a path, a name, a yes/no on existence, a count. Anything a search
-  could confirm. → `model: haiku`.
-- **Interpret** — a pattern, a convention, a shape, a judgement about how code is
-  organised. → leave the frontmatter default (`sonnet`).
+Then create `<specdir>` and write `## Problem`, `## Protocol` (`Round: 0 of 2`),
+`## Reads`, `## Sessions` and the `(r0)` entries to `tree.md`, before dispatching
+anything (R1). `## Reads` lists what drafting will need, and only files that
+exist: the input documents, each principles file you take a rule from, and
+later the glossary and any ADR that bears on this feature. An ADR about another
+part of the project is not a drafting input. Source code does not go there:
+grounding facts carry what drafting needs from it.
 
-When genuinely unsure, use interpret. The cost difference on one question is
-trivial; a wrong grounding fact poisons every question built on it.
+On a stack detection, load that stack's two `references/<stack>/` files before
+dispatching; they say what to look for. Exactly one layer loads, or none. When
+the scope spans two stacks, ask which side the feature lives on first.
 
-Read the glossary, the decision-record directory and the principles files
-**yourself**, not through an agent — they are small and needed verbatim.
+A source file the input names is yours to read when it is short enough to read
+whole; record what you find as `(read at intake, r0, high)`. Fact-finders are
+for what lies beyond it: other files, call sites, conventions, whether something
+exists. Do not send a question you have already answered.
 
-Write `## Problem`, `## Reads`, `## Grounding facts` and `## Principles in force`
-to `tree.md`. Show a short "what I found", including **what it made unnecessary
-to ask** — a fact found is a question never asked.
+Dispatch fact-finders in **one message** so they run together: one for
+questions a search settles (a path, a name, whether something exists; pass
+`model: haiku`) and one for questions that need code read and understood (the
+agent's default model). Dispatch only the kind you have questions for, and none
+when there is no code to ground in. Each gets specific questions, any claims
+the input makes to grade as confirmed, contradicted or unverifiable, and the
+scope path when there is one. Never "sweep the repo". Keep a dispatch to about six questions and
+claims; an agent given more runs out of turns and returns nothing, so split a
+longer list across a second dispatch of the same kind.
 
-## Phase 2 — GRILL *(loop)*
+A return that does not contain `Q:` / `FACT:` / `EVIDENCE:` / `CONFIDENCE:` /
+`NOT_FOUND:`, plus `VERDICT:` for a claim, is not an answer. `SendMessage` the
+agent once asking for the report in the schema, and only then treat the dispatch
+as failed.
 
-First round only: load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/coverage-taxonomy.md`,
-`${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/question-format.md`, and `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/frontier.md` (default and deep).
+Read the glossary, the ADR directory and the principles files yourself: they are
+small and needed verbatim.
 
-1. Score coverage against the taxonomy, using its category names verbatim.
-2. Build the frontier. Rank by Impact × Uncertainty. **Take the top 5, never
-   more** (R9). Fewer is fine — padding a round is how it starts feeling like a
-   form.
-3. Facts are found **before** the round (R2). It is not mechanically possible to
-   hold a user prompt open while agents run.
-4. Render the round: **one `AskUserQuestion` call plus one markdown block**,
-   never two pickers. Closed 2–4 way choices go in the picker (≤4, `header` ≤12
-   chars, "why it matters" inside `question`, recommended option first tagged
-   `(Recommended)`). Everything else goes in the markdown block with the coverage
-   table and the `skip` / `stop` offer.
-5. **Append every answer and its rationale to `tree.md` via `Edit`, not `Write`**
-   (R1). Rewriting a 300-line file each round costs several times what patching
-   it does.
-6. Challenge fuzzy terms — at most two per round — and write glossary entries as
-   they resolve, not batched at the end. Load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/glossary-format.md` on
-   the first one.
-7. Re-score coverage, print the table with a line explaining anything that did
-   not move, and offer continue / defer the rest / stop.
-8. Update the `## Protocol` counters and evaluate the guard **with the script,
-   not by hand** (R7):
-   `bash ${CLAUDE_PLUGIN_ROOT}/scripts/bump-protocol.sh <specdir>/tree.md --round --questions <n> --fact-finders <n> --references <n> --read <lines> [--read <lines> …]`
-   One `--read` per `Read` you made, carrying its line count.
-   It rewrites the block in canonical form, corrects a questions count that has
-   fallen behind the ids on the page, and **recomputes the guard from the
-   counters** rather than taking your word for it. **Exit 3 means the guard just
-   tripped** — stop grilling immediately (R5) and go to Phase 5. Six numbers
-   re-transcribed by hand at the end of every round is the shape of an error.
-9. **Validate before the next round**, and fix until clean:
+Add `## Grounding facts` and `## Principles in force` to the record. A fact
+cites its `path:line` from the repository root; the hook fails a citation that
+points at no file. Before you tell the user their document is wrong, open the
+cited line yourself: a contradicted claim is the most valuable thing this phase
+produces, and the one that costs most when it is mistaken.
+
+Then show the user, briefly: what you found and what it made unnecessary to
+ask, every contradicted claim, and the decisions you took from their input, one
+line each. That list is everything the spec will be built on, and this is where
+a mis-sorted line is cheapest to catch. Do not wait for a reply; go on.
+
+## Phase 2 — CLARIFY *(only when the input leaves something open)*
+
+Load `coverage-taxonomy.md` and `frontier.md`.
+
+1. Score coverage from the record, using the taxonomy's category names verbatim,
+   and write the table to `## Coverage`.
+2. Build the frontier: categories that are Missing or Partial, contradicted
+   claims, the input's own open questions, and, when there is more than one
+   user-visible behaviour, behaviours the input did not rank. Apply the
+   frontier's "earns a slot" test to each. Write `## Frontier`, `## Blocked` and
+   `## Deferred`; a list with nothing in it keeps its heading and stays empty.
+3. **Decide whether to ask at all.** If no category is Missing and nothing
+   high-impact is on the frontier, no round runs. Move what is left on the
+   frontier to `## Deferred`, each with a question id and `(r0)`, and score a
+   category they leave open as `Clear* (n deferred)`. Say in a line or two (R16)
+   what the input already settled and what was deferred. Go to Phase 3.
+4. Otherwise render a round. Load `question-format.md` the first time. Take
+   the top questions by Impact × Uncertainty, five at most (R9). A term an
+   answer hinges on is challenged inside the question that uses it, two per
+   round at most. The Phase 1 summary is the round's grounding block; do not
+   write it twice.
+5. Append every answer and its rationale to `tree.md` with `Edit` (R1). Write a
+   glossary entry for each term that resolved; load `glossary-format.md` on the
+   first.
+6. Re-score coverage and update `Round` and `## Sessions`.
+7. Validate, and fix until clean:
    `bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-tree.sh <specdir>/tree.md`
-   It checks what you would otherwise self-police — verbatim category names,
-   `Clear*` with its count, `N/A` with a reason, rationale and round on every
-   answer, unique ids, transitive deferral. Interpretation drifts; this does not.
 
-**Deferral is transitive:** deferring a question defers everything blocked behind
-it, in one step. Never leave an orphan in `## Blocked` pointing at a deferred
-parent.
+A second round runs only if a category is still Missing or a high-impact question
+is still open. After two rounds, everything left moves to `## Deferred`. A
+category still Missing then gets one deferred question of its own, so it ships
+as an open question like any other.
 
-**A category is `Clear*` only if nothing High-impact in it was deferred.** A
-High-impact deferral holds the category at `Partial`. Print `Clear*` with its
-count, everywhere, always.
+Deferral is transitive: deferring a question defers everything blocked behind it,
+in one step. A category is `Clear*` only if nothing high-impact in it was
+deferred, and prints with its count everywhere.
 
-Loop while round < cap and Missing categories remain. At the cap in default mode,
-evaluate the 4th-round unlock once.
+When no round ran, run `check-tree.sh` once here before going on.
 
 ## Phase 3 — STRATEGY
 
-Skipped in `--fast`. Skipped in default when exactly one approach is viable —
-**and say so out loud** (R16).
+Skipped when exactly one approach is viable. Say so to the user, with the
+reason (R16), and leave `## Strategy` out of the record.
 
-Propose 2–3 approaches with trade-offs. Use `AskUserQuestion` with `preview`
-blocks: ≤12 lines, **shape not code**. This is the one place in the run where the
-user compares shapes rather than answering a question.
+Otherwise propose 2–3 approaches with their trade-offs. Use `AskUserQuestion`
+with `preview` blocks of at most 12 lines that show shape, not code. Record the
+chosen approach and the rejected ones, with reasons.
 
-Record chosen **and** rejected, with reasons.
-
-If the choice is genuinely contested and hard to reverse, point at
-`/multi-agent-debate` rather than rebuilding it here. A suggestion, never a call.
+If the choice is contested and hard to reverse, point at `/multi-agent-debate`.
+A suggestion, never a call.
 
 ## Phase 4 — PROMOTE DECISIONS
 
-Load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/adr-format.md` only if a candidate exists.
+Load `adr-format.md` only if a candidate exists. Apply R14's three tests; a typical run promotes zero or one.
 
-**Three tests, all three or skip** (R14): hard to reverse? surprising without
-context? the result of a real trade-off? A typical interview promotes zero or
-one. Three means the test is being applied loosely.
+Write qualifying ADRs as `Status: Proposed`, with a back-link to `<specdir>` and
+a name that matches the directory's own convention. Add them to `## Reads`.
 
-Write qualifying ADRs as `Status: Proposed` with a back-link to the spec
-directory, named to match the directory's own convention. Add them to `## Reads`.
+## Phases 5 to 7 — DRAFT, CRITIQUE, PUBLISH
 
-## Phase 5 — DRAFT
+Load `drafting.md` and follow it.
 
-Load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/drafting.md` and follow
-it. It carries phases 5, 6 and 7 — drafting under the source-tag rule, the critic
-packet and its two passes, and the report.
+Read `tree.md` and exactly the files its `## Reads` names. Nothing else: not the
+conversation, not `## History`. Every requirement, criterion, out-of-scope line
+and constraint carries a source tag naming the record entry it came from (R10),
+and says no more than that entry says.
 
-**Read `tree.md` and exactly the files in its `## Reads` list. Nothing else.** No
-re-interview, no `## History`. Every requirement, criterion and scenario carries a
-source tag naming the `tree.md` line it came from; anything untraceable is **cut
-or marked, never asserted** (R10).
+## Scripts
 
----
+Run each as `bash <script> …`, the form the grants cover. Do not reimplement
+their checks in prose.
 
-## Degradation
+| Script | When |
+|---|---|
+| `${CLAUDE_PLUGIN_ROOT}/scripts/check-tree.sh <tree.md>` | end of Phase 2, and after every round |
+| `${CLAUDE_PLUGIN_ROOT}/scripts/check-tree.sh <tree.md> --doctor` | only when the record will not parse; it names the broken section |
+| `${CLAUDE_PLUGIN_ROOT}/scripts/check-spec.sh <draft> --tree <tree.md> [--prev <spec being amended>]` | after drafting, before the critic |
+| `${CLAUDE_PLUGIN_ROOT}/scripts/make-packet.sh <draft> --tree <tree.md> --out <specdir>/.work/critic-packet.md [--pass1 <first reply>]` | Phase 6; the critic reads the file |
+| `${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <reply> --single --packet <packet>` · `<reply 1> <reply 2> --packet <packet>` | after each critic pass, and to reconcile the two |
+| `${CLAUDE_PLUGIN_ROOT}/scripts/publish-spec.sh <specdir> [--allow-reword \| --fresh]` | Phase 7; turns the checked draft into `spec.md` and writes `traceability.md` |
 
-Load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/degradation.md` the moment you hit a failure
-path, or are about to invent a failure behaviour. Every row degrades toward
-**producing something**, and nothing is papered over silently.
+## References
 
+Each phase above names the reference it loads; load each once. Two are not
+named there:
+
+- `degradation.md`: load it the moment you hit a failure path, or are about to
+  invent one. Every failure path degrades toward producing something, and none
+  is papered over silently.
+- `critic-rubric.md`: never loaded by you. `make-packet.sh` inlines it for the
+  critic.

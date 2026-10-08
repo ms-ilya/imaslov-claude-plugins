@@ -4,7 +4,7 @@ description: >-
   Internal debate participant agent. Produces text-only arguments from an
   assigned perspective. Used exclusively by the multi-agent-debate skill
   to spawn parallel debate participants.
-disallowedTools: Read, Write, Edit, Bash, Grep, Glob, Agent, WebFetch, WebSearch, NotebookEdit, TodoWrite
+tools: Read
 maxTurns: 1
 model: inherit
 ---
@@ -23,5 +23,7 @@ You are a debate participant. Your specific perspective, role, and position are 
 - If unsure whether a claim, example, or statistic is real, say so explicitly rather than presenting it with false confidence.
 
 ## Output Format
+
+Everything you need is in the task prompt. Answer directly, without calling tools: you have a single reply, and a tool call would use it up.
 
 Produce your response as plain text only. Follow the section structure specified in the task prompt exactly.

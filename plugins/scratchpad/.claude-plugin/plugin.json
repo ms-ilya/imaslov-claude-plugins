@@ -1,9 +1,11 @@
 {
   "name": "scratchpad",
   "description": "Context-preserving debugging journal that persists investigation state across sessions.",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": {
     "name": "Ilya"
   },
+  "repository": "https://github.com/ms-ilya/imaslov-claude-plugins",
+  "license": "MIT",
   "keywords": ["scratchpad", "debugging", "investigation", "context", "journal"]
 }

@@ -94,6 +94,6 @@ Inline simulation is less rigorous because agents share implicit context, but st
 ## Performance Notes
 
 - **Parallelism:** Multiple Agent tool calls in a single response run concurrently. 3 agents = 3 simultaneous subagents per round. Total for a full 3-round debate: 9 subagent calls + 0 for judgment.
-- **Latency:** Each round takes ~5-15 seconds (parallel execution, limited by the slowest agent). Full debate: ~30-60 seconds.
+- **Latency:** Each round is limited by its slowest agent. Rounds do not overlap, so a full debate takes three agent round-trips plus the judgment.
 - **Token budget:** With 200-350 word responses, each agent produces ~300-500 output tokens. Total debate: ~3,000-5,000 output tokens across all agent calls. The Judge synthesis adds ~400-700 tokens.
 - **Scaling:** With 5 agents, input tokens for Round 2 scale quadratically (each agent reads all others' outputs). When agent count > 3, consider summarizing each R1 output to ~100 words before feeding to other agents in Round 2. Full outputs are preserved for the Judge.

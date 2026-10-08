@@ -1,18 +1,14 @@
 ---
 name: root-cause-analysis
 description: >-
-  Systematic root cause analysis that investigates codebases to find why bugs,
-  crashes, and failures happen. Use this skill when the user asks to investigate
-  a bug's root cause, perform an RCA, do a postmortem, or asks questions like
-  "why does this keep happening", "what caused this regression", "investigate
-  this crash", "find the source of this bug", "trace this error", "why did
-  this break", "what's the root cause", or wants to understand the underlying
-  cause of any recurring or unexpected problem in code. Also trigger when the
-  user describes a production incident, repeated failure, performance
-  degradation, flaky test, CI/CD failure, build regression, memory leak,
-  resource exhaustion, or security vulnerability introduction and wants to
-  understand why.
-allowed-tools: Read, Write, Glob, Grep, Bash, Agent, AskUserQuestion, TodoWrite
+  Systematic root cause analysis: investigates a codebase to find why a bug,
+  crash, regression or incident happened, and ends in an evidence-backed 5 Whys
+  chain or RCA report. Use when the user asks for a root cause analysis, an
+  RCA, a postmortem, or the root cause of a recurring or unexplained failure
+  (production incident, regression, flaky test, CI failure, memory leak,
+  performance degradation). Not for ordinary debugging where the user wants
+  the bug fixed rather than explained.
+allowed-tools: Read, Write, Glob, Grep, Agent, AskUserQuestion
 ---
 
 # Root Cause Analysis
@@ -39,14 +35,14 @@ Gather what the user knows before investigating.
 | Multi-file issue, regression, unclear cause | **Standard** |
 | Production incident, complex failure, multiple contributing factors | **Full** |
 
-4. **Scope checkpoint:** Present scope to user via AskUserQuestion: "I'm planning a [Quick/Standard/Full] investigation. Should I adjust?" Options: "Quick — inline summary", "Standard — RCA report", "Full — comprehensive with fishbone analysis".
+4. **State the scope and proceed:** Say which scope you picked and the signal that decided it ("Standard investigation: the regression spans several files"), then start. The user can redirect at any point. Ask with AskUserQuestion only when the signals point to different scopes and the difference matters, such as a Full investigation that would spawn agents for what may be a one-file bug.
 5. **Detect project technology** (if not already known from conversation context):
    - Glob for manifest files: `package.json`, `Cargo.toml`, `go.mod`, `pyproject.toml`, `requirements.txt`, `*.csproj`, `Gemfile`, `build.gradle`
    - Read the manifest to identify language, framework, and dependency versions
    - This informs which grep patterns and config files to check in Phase 1
    - Skip if the user already identified the technology or you've been working in this codebase
 
-For Standard/Full scope, use TodoWrite to track progress through the phases.
+For Standard/Full scope, say which phase you are in as you move through them.
 
 ## Phase 1: Gather Evidence
 
@@ -91,9 +87,9 @@ Use Bash for git operations:
 - Glob for test files — is this code path tested?
 - Glob for config files — could environment differences explain the issue?
 
-**Standard scope:** Use the Quick Investigation Checklist from `references/techniques.md` mentally — have you considered factors beyond code? (Data, Infrastructure, Process, People)
+**Standard scope:** Use the Quick Investigation Checklist from `${CLAUDE_SKILL_DIR}/references/techniques.md` mentally — have you considered factors beyond code? (Data, Infrastructure, Process, People)
 
-**Full scope:** Read `references/techniques.md` and use the fishbone categories to structure a broader investigation. Trigger parallel agent delegation (see below).
+**Full scope:** Read `${CLAUDE_SKILL_DIR}/references/techniques.md` and use the fishbone categories to structure a broader investigation. Trigger parallel agent delegation (see below).
 
 ### Agent Delegation (Full Scope)
 
@@ -110,10 +106,10 @@ INVESTIGATE:
 - Code: Trace the code path from symptom. Check imports, dependencies, error handling, edge cases, type safety.
 - Data: Check for schema mismatches, missing migrations, query issues, data format problems, encoding.
 
-USE ONLY: Glob, Grep, Read, Bash (git commands only — git log, git blame, git diff, git show).
+USE ONLY read-only operations: file reads, searches (the Grep and Glob tools, or grep and find through Bash), and git log, git blame, git diff, git show. Change nothing.
 
 RULES:
-- Verify file paths with Glob before citing.
+- Verify that a file path exists before citing it.
 - Only describe behavior of code you've Read — never infer from names alone.
 - Mark unverified claims as ⚠️ HYPOTHESIS.
 - Keep output ≤200 words.
@@ -134,10 +130,10 @@ INVESTIGATE:
 - Infrastructure: Check config files, environment variables, resource limits, connection pools, timeouts, deployment config.
 - Process: Check test coverage for this code path, CI config, monitoring/alerting setup, deployment scripts.
 
-USE ONLY: Glob, Grep, Read, Bash (git commands only — git log, git blame, git diff, git show).
+USE ONLY read-only operations: file reads, searches (the Grep and Glob tools, or grep and find through Bash), and git log, git blame, git diff, git show. Change nothing.
 
 RULES:
-- Verify file paths with Glob before citing.
+- Verify that a file path exists before citing it.
 - Only describe behavior of code you've Read — never infer from names alone.
 - Mark unverified claims as ⚠️ HYPOTHESIS.
 - Keep output ≤200 words.
@@ -167,11 +163,9 @@ Maintain an in-context evidence ledger throughout Phase 1. One line per finding,
 
 Max ~15 entries. If exceeding, merge related findings or drop weakest evidence.
 
-### Evidence Checkpoint
+### Evidence Summary
 
-After completing Phase 1, present findings to the user via AskUserQuestion with this format:
-
-"Here's what I found so far:
+After completing Phase 1, show the user where the investigation stands, then carry on into Phase 2:
 
 **Key findings:**
 - [E1] [source] — [finding summary]
@@ -182,13 +176,12 @@ After completing Phase 1, present findings to the user via AskUserQuestion with 
 **Initial hypothesis:** [1-sentence candidate root cause]
 **Confidence so far:** [High/Medium/Low]
 
-Should I proceed with the 5 Whys analysis?"
+Stop and ask with AskUserQuestion only when the answer changes what you do next:
+- **The evidence splits:** two or more candidate causes have comparable support and point the analysis in different directions. Present them and ask which to pursue first.
+- **Something only the user has is needed:** logs, reproduction steps, access to a system. Say exactly what and why.
+- **Upgrade:** the issue is more complex than the scope allows for ("I'm seeing [evidence of complexity]"). Ask before upgrading to Standard or Full, because that costs more time and may spawn agents.
 
-Options: "Proceed with analysis", "Investigate [specific area] further", "Add more context first", "Change investigation direction".
-
-**Scope adjustment:** If evidence reveals the issue is simpler or more complex than the initial scope:
-- **Upgrade:** "This looks more complex than expected — I'm seeing [evidence of complexity]. Should I upgrade to [Standard/Full] scope?" Present via AskUserQuestion.
-- **Downgrade:** "This is simpler than expected — root cause is clear from [evidence]. I'll provide a [Quick/Standard] analysis instead." Proceed without asking — downgrading saves time.
+**Downgrade** without asking: "This is simpler than expected — root cause is clear from [evidence]. I'll provide a [Quick/Standard] analysis instead."
 
 ## Phase 2: 5 Whys Analysis
 
@@ -225,7 +218,7 @@ Confidence: [High / Medium / Low]
 - **Branching:** If a "Why" has multiple plausible answers:
   1. Follow the path with the strongest evidence first
   2. Note alternative paths as contributing factors
-  3. If evidence is equal, present both paths to the user at the checkpoint
+  3. If evidence is equal, present both paths to the user and ask which to pursue
 - **Information boundary:** If you can't investigate further (no access to logs, external service, etc.), state the boundary explicitly and recommend what the user should investigate manually
 
 ### Confidence Rating
@@ -234,9 +227,11 @@ Confidence: [High / Medium / Low]
 - **Medium:** 1-2 evidence sources, plausible chain but has gaps or one hypothesis step
 - **Low:** Hypothesis-level, multiple gaps, needs more investigation
 
-### User Checkpoint
+### Root Cause Confirmation
 
-Present the 5 Whys chain and confidence rating to the user via AskUserQuestion:
+**Quick scope:** no checkpoint. The inline result in Phase 3 is the confirmation; the user replies if it is wrong.
+
+**Standard / Full scope:** a report file is about to be written around this root cause, so confirm it first. Present the 5 Whys chain and confidence rating via AskUserQuestion:
 - "Root cause ([confidence] confidence): [root cause]. Does this match your understanding?"
 - Options: "Looks correct", "Root cause is different — I'll explain", "Need to dig deeper"
 
@@ -267,31 +262,31 @@ Assign severity based on impact:
 
 ### Standard / Full scope
 
-1. Read `references/templates.md` for the RCA Report template (read once — this is the only read of this file)
-2. Create `rca-reports/` directory if it doesn't exist
-3. Write the report to `rca-reports/RCA-<kebab-case-issue-name>.md`
-4. Include the evidence ledger in the report
-5. Include confidence rating with the root cause
-6. For solutions, always include three tiers:
+1. Read `${CLAUDE_SKILL_DIR}/references/templates.md` for the RCA Report template (read once — this is the only read of this file)
+2. Write the report to `rca-reports/RCA-<kebab-case-issue-name>.md` (the Write tool creates the directory)
+3. Include the evidence ledger in the report
+4. Include confidence rating with the root cause
+5. For solutions, always include three tiers:
    - **Immediate:** Fix the specific symptom
    - **Short-term:** Prevent this exact recurrence (test, alert, validation)
    - **Long-term:** Systemic fix that prevents the class of failure
-7. Prefer systemic solutions over individual fixes — see `references/techniques.md` Systemic vs Individual table
-8. **Contributing Factors:** Review the evidence ledger for findings that contributed to the incident but aren't part of the main 5 Whys chain. Record these in the Contributing Factors table with their category (Code/Data/Infrastructure/Process) and evidence ID.
-9. Run the Follow-Up Checklist from `references/templates.md` to verify completeness
+6. Prefer systemic solutions over individual fixes — see `${CLAUDE_SKILL_DIR}/references/techniques.md` Systemic vs Individual table
+7. **Contributing Factors:** Review the evidence ledger for findings that contributed to the incident but aren't part of the main 5 Whys chain. Record these in the Contributing Factors table with their category (Code/Data/Infrastructure/Process) and evidence ID.
+8. Run the Follow-Up Checklist from `${CLAUDE_SKILL_DIR}/references/templates.md` to verify completeness
 
 ## Tool Strategy
 
 | Tool | Purpose |
 |------|---------|
-| **Grep** | Search for error messages, function names, patterns. Use `files_with_matches` for discovery, `content` with context for analysis |
+| **Grep** | Search for error messages, function names, patterns. Ask for file paths only for discovery, matching lines with context for analysis |
 | **Glob** | Find relevant files (tests, configs, migrations). Verify file paths exist before including in report |
 | **Read** | Examine source code. Always Read before claiming anything about code behavior. Use offset/limit for files >200 lines |
-| **Bash** | Git operations only: `git log`, `git blame`, `git diff`, `git show`, `git bisect`. Always use `--oneline` for log. Never use Bash for grep, find, or cat |
+| **Bash** | Git operations: `git log`, `git blame`, `git diff`, `git show`, `git bisect`. Always use `--oneline` for log. Also `grep` and `find` where the session has no Grep or Glob tool. An investigation changes nothing in the working tree |
 | **Agent** | Full scope: spawn 2 parallel investigation agents (Code+Data, Infrastructure+Process). Standard scope: optional Explore agent for unfamiliar codebases. Use `subagent_type: "general-purpose"` for investigation, `"Explore"` for codebase mapping |
 | **Write** | Create RCA report file (Standard/Full scope) |
-| **AskUserQuestion** | Scope confirmation (Phase 0), evidence checkpoint (Phase 1), validate root cause (Phase 2) |
-| **TodoWrite** | Track investigation progress (Standard/Full scope) |
+| **AskUserQuestion** | Clarify an unclear symptom (Phase 0), resolve split evidence or a scope upgrade (Phase 1), confirm the root cause before a report is written (Phase 2) |
+
+`Grep` and `Glob` in this skill name the search, not a particular tool: on macOS and Linux the main session and general-purpose subagents have no Grep or Glob tool and search with `grep` and `find` through Bash. Either form is fine; what matters is that every claim rests on a search or read run in this session.
 
 ## Token Management
 
@@ -306,7 +301,7 @@ Assign severity based on impact:
 
 Every RCA finding must be traceable to actual evidence. These rules prevent hallucination.
 
-1. **File paths:** Verify with Glob before including in the report. If a file doesn't exist, don't reference it.
+1. **File paths:** Verify that each path exists before including it in the report. If a file doesn't exist, don't reference it.
 2. **Code behavior:** Only describe behavior of code you've Read with the Read tool. Never infer behavior from function names alone.
 3. **Git history:** Only cite commits from actual `git log` or `git show` output. Never invent commit SHAs or messages.
 4. **Git SHA verification:** When citing a commit in the report, confirm with `git show --stat <SHA>` that it exists and touches the claimed files.

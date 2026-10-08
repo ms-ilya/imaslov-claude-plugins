@@ -8,6 +8,7 @@ description: >-
   context for feature X", or "what's the state of feature X". This is the primary
   Memory Bank workflow — it creates the per-feature documentation files
   (IMPLEMENTATION.md, ACTIVE_CONTEXT.md, TROUBLESHOOTING.md) with verified content.
+argument-hint: "<feature name>"
 allowed-tools: Read, Write, Edit, Glob, Grep
 ---
 
@@ -29,9 +30,9 @@ If no arguments provided, ask which feature to document. Show existing documente
 2. If `memory-bank/` doesn't exist → tell the user to run `/init-memory-bank` first
 3. Detect project language by checking for config files at the root (use `Glob`):
    Swift (`Package.swift`, `*.xcodeproj`) · TypeScript (`tsconfig.json`) · Python (`pyproject.toml`, `setup.py`) · Rust (`Cargo.toml`) · Go (`go.mod`) · Kotlin (`build.gradle.kts`) · Java (`pom.xml`, `build.gradle`)
-   Use the detected language's file extensions for all subsequent searches. If a language-specific reference exists (e.g., `../memory-bank/references/swift-intelligence.md` for Swift/iOS), read it
+   Use the detected language's file extensions for all subsequent searches. If a language-specific reference exists (e.g., `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/swift-intelligence.md` for Swift/iOS), read it
 
-Note: Read templates from `../memory-bank/references/templates.md` just before writing each file — only the section you need, not the whole file.
+Note: Read templates from `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/templates.md` just before writing each file — only the section you need, not the whole file.
 
 ## Step 1 — Feature Discovery
 
@@ -85,7 +86,7 @@ If folder doesn't exist → **Creation mode:** Generate from scratch.
 
 ## Step 4 — Write Feature Files (One at a Time)
 
-For each file below, read its template section from `../memory-bank/references/templates.md` (only that section), write the file, then verify immediately (see Step 5) before writing the next:
+For each file below, read its template section from `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/templates.md` (only that section), write the file, then verify immediately (see Step 5) before writing the next:
 
 1. **IMPLEMENTATION.md** — from deep analysis
 2. **ACTIVE_CONTEXT.md** — fill "Current State" and "Known TODOs" from code analysis (verifiable). For "In-Progress Work" and "Next Steps", use `⚠️ Ask user` placeholders and ask the user to fill in or confirm.
@@ -93,9 +94,9 @@ For each file below, read its template section from `../memory-bank/references/t
 
 **Do NOT create DECISIONS.md** — it's user-curated only, created via `/add-decision`.
 
-## Step 5 — Verify Each File (MANDATORY)
+## Step 5 — Verify Each File
 
-Read `../memory-bank/references/verification.md` for the full procedure. After writing each file:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/verification.md` for the full procedure. After writing each file:
 
 1. Verify every file path using `Glob`
 2. Verify every type name using `Grep` with language-appropriate extensions
@@ -126,4 +127,5 @@ If INFERRED rate exceeds 30%, read more source files before proceeding.
 - **Current state only** — never write changelogs or date-stamped entries
 - **No speculation without flags** — use `⚠️ INFERRED` with evidence of what WAS verified
 - **Never invent file paths** — if not found, say "file not found"
+- **Search with what the session has** — the Grep and Glob tools where they exist, otherwise `grep` and `find` through Bash (on macOS and Linux the main session has no Grep or Glob tool). Wherever these steps name `Grep` or `Glob`, either form counts; what matters is that the result comes from a search run in this session
 - **User confirms file discovery** — always wait before deep analysis

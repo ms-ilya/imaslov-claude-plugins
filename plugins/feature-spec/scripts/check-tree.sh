@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
 # ABOUTME: Validates a feature-spec design record (tree.md) — structure, coverage names, states,
-# ABOUTME: counter values and dependency integrity. Deterministic replacement for rules the orchestrator would self-police.
+# ABOUTME: round values and dependency integrity. Deterministic replacement for rules the orchestrator would self-police.
 set -uo pipefail
 
 usage() {
   cat <<'USAGE'
-usage: check-tree.sh <path-to-tree.md> [--repo-root <path>] [--doctor]
+usage: check-tree.sh <path-to-tree.md> [--repo-root <path>] [--closed-world] [--doctor]
 
-  --repo-root <path>  Root the ## Reads entries are resolved against.
+  --repo-root <path>  Root the ## Reads entries and the grounding facts'
+                      path:line citations are resolved against.
                       Defaults to the enclosing git work tree, else the
                       current directory.
   --closed-world      Check only what the record ASSERTS, never what it OMITS.
-                      Phase 1 legitimately writes four sections and no more;
+                      Intake legitimately writes only some sections;
                       Phase 2 adds the rest. Open-world checks fail on every
                       honest intermediate state, which teaches the writer to
                       evade the checker rather than satisfy it. Used by the
-                      PostToolUse hook; the full check runs at the round gate.
+                      PostToolUse hook; the full check runs at the gate.
   --doctor            Diagnose an unparseable record: name every section that
                       is missing or malformed, print the shape it should have
                       straight from tree-format.md, and say what the minimal
@@ -63,6 +64,7 @@ fi
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TAX="$HERE/../skills/feature-spec/references/coverage-taxonomy.md"
 FMT="$HERE/../skills/feature-spec/references/tree-format.md"
+[ -f "$TAX" ] || { echo "FAIL  coverage taxonomy not found: $TAX"; exit 2; }
 
 if [ "$DOCTOR" -eq 1 ]; then
   # "Report which section failed and stop" is the right behaviour and also a dead
@@ -80,9 +82,9 @@ try:
 except OSError:
     pass
 
-def skel_section(name):
-    m = re.search(rf'^## {re.escape(name)}[^\n]*$(.*?)(?=^## |\Z)', skel, re.M | re.S)
-    return (f"## {name}" + m.group(1).rstrip()) if m else None
+def skel_heading(name):
+    m = re.search(rf'^## {re.escape(name)}[^\n]*$', skel, re.M)
+    return m.group(0) if m else f"## {name}"
 
 problems = 0
 print(f"DOCTOR  {sys.argv[1]}")
@@ -94,15 +96,18 @@ if missing:
     print(f"{len(missing)} required section(s) missing: {', '.join(missing)}")
     print()
     for name in missing:
-        block = skel_section(name)
         print(f"── add ── {name}")
-        if block:
-            for line in block.splitlines():
-                print(f"   {line}")
-        else:
-            print(f"   ## {name}")
-            print("   (tree-format.md has no example for this section)")
+        print(f"   {skel_heading(name)}")
+        if name == 'Protocol':
+            print("   Slug: <directory name>   Started: <date>")
+            print("   Stack: <stack or none>   Scope: <path or none>")
+            print("   Round: <n> of <m>   Next phase: <n>")
         print()
+    # The skeleton's body is an example about another feature. Pasted into a
+    # real record it becomes decisions nobody made, which every tag then resolves.
+    print("Add the heading only. What the section held comes back from the input")
+    print("or from the user, never from the example in tree-format.md.")
+    print()
 
 if not rec.problem():
     problems += 1
@@ -137,8 +142,8 @@ p = rec.protocol()
 if p['raw'] and p['round'] is None:
     problems += 1
     print("── repair ── ## Protocol has no readable Round")
-    print("   Run:  bump-protocol.sh <tree.md> --set-round <n> --next-phase <n>")
-    print("   which rewrites the whole block in canonical form.")
+    print("   Add the line:  Round: <n> of <m>   Next phase: <n>")
+    print("   where n is the number of clarifying rounds already answered.")
     print()
 
 print("─────────────────────────────────────────────")
@@ -156,7 +161,8 @@ fi
 
 out=$(PYTHONPATH="$HERE/lib" python3 - "$TREE" "$TAX" "$ROOT" "$CLOSED" <<'PYEOF'
 import re,sys,os
-from record import Record, is_external_path
+from record import (Record, is_external_path, search_roots, resolve_path,
+                    wording_overlap, FACT_SUFFIX, FACT_VERDICT)
 tree=open(sys.argv[1]).read()
 rec=Record(tree, sys.argv[1])
 tax=open(sys.argv[2]).read() if os.path.isfile(sys.argv[2]) else ''
@@ -195,27 +201,16 @@ else:
     bad(f"missing sections: {missing}", "a '## <name>' heading for each, in tree-format.md order")
 
 # ---- 2. protocol block ---------------------------------------------------
-PROTO_SHAPE=("Round: 2 of 3   4th round unlocked: no   Next phase: 2\n"
-             "Counters: questions 10 · fact-finders 2 · references 4 · "
-             "orchestrator reads 5 · lines read 340 · critic passes 0\n"
-             "Largest single read: 180 lines\n"
-             "Guard: not tripped")
+PROTO_SHAPE=("Slug: 2026-08-21-retry-uploads   Started: 2026-08-21\n"
+             "Round: 1 of 2   Next phase: 2")
 proto=section('Protocol') or ''
-pmiss=[k for k in ('Slug:','Mode:','Round:','Next phase:','Counters:','Guard:') if k not in proto]
+pmiss=[k for k in ('Slug:','Round:','Next phase:') if k not in proto]
 if closed and pmiss:
     skipped(f"protocol block complete ({len(pmiss)} field(s) not yet written)")
 elif not pmiss:
     ok("protocol block complete")
 else:
     bad(f"protocol missing: {pmiss}", PROTO_SHAPE)
-CTRS=Record.COUNTERS
-cmiss=[c for c in CTRS if c not in proto]
-if closed and cmiss:
-    skipped("all guard counters recorded")
-elif not cmiss:
-    ok("all guard counters recorded")
-else:
-    bad(f"guard counters missing: {cmiss}", PROTO_SHAPE)
 
 # ---- 3. problem statement ------------------------------------------------
 prob=[l for l in (section('Problem') or '').splitlines() if l.strip()]
@@ -258,29 +253,55 @@ else:
         if s.startswith('N/A') and not re.search(r'N/A\s*[—:-]\s*\S', s):
             bad(f"'{c}' is N/A with no stated reason — an unjustified N/A is a dodge",
                 "N/A — makes no network calls and reads no external data")
+    # A table can only be as clear as the record under it. Both checks need the
+    # rest of the record to exist, so they wait for the gate.
+    if not closed:
+        claimed=sum(int(m.group(1)) for _,s in rows if s.startswith('Clear*')
+                    for m in [re.search(r'\(\s*(\d+)\s+deferred\s*\)', s)] if m)
+        ndef=len(rec.deferred_entries())
+        if claimed>ndef:
+            bad(f"coverage counts {claimed} deferred question(s) across its Clear* rows, but ## Deferred lists {ndef}",
+                "each Clear* count names questions that sit under ## Deferred")
+        if any(s.startswith('Clear') for _,s in rows) and not rec.settled() \
+                and not rec.grounding_fact_list():
+            bad("coverage scores a category Clear, but the record holds no settled decision and no grounding fact",
+                "Clear means every decision in the category is made and written down")
 
 # ---- 5. settled answers carry rationale, round -------------------------
-sb=section('Settled') or ''
-nset=len(re.findall(r'^\s*-\s+\*\*Q\d+', sb, re.M))
-nwhy=len(re.findall(r'^\s*\*Why:\*', sb, re.M))
-nrnd=len(re.findall(r'\(r\d+\)', sb))
 SETTLED_SHAPE=("- **Q2 Attempt ceiling** → at most 5 attempts spread over 24h. [P2]\n"
                "  *Why:* survives a workday outage, bounds file growth. (r1)")
+DEFERRED_SHAPE="- **Q12 Per-source overrides** — low impact, decided post-launch (r1)"
+# An entry the parser cannot read looks settled to a person and does not exist
+# for any tool: no tag resolves to it and no packet carries it.
+for name,shape in (('Settled',SETTLED_SHAPE),('Deferred',DEFERRED_SHAPE)):
+    for line in rec.unparsed_entries(name):
+        bad(f"an entry under ## {name} cannot be read: '{line[:60]}'", shape)
+settled=rec.settled()
+nset=len(settled)
+rounds=[e['round'] for e in settled if e['round'] is not None]
 if nset==0:
-    note("no settled answers yet (expected before round 1)")
+    note("no settled answers yet")
 else:
-    ok(f"all {nset} settled answers carry a rationale") if nwhy>=nset else \
-        bad(f"{nset} settled answers but {nwhy} rationales — the rationale is what a compaction destroys",
+    noans=[e['id'] for e in settled if not e['answer']]
+    nowhy=[e['id'] for e in settled if not e['why']]
+    nornd=[e['id'] for e in settled if e['round'] is None]
+    if noans:
+        bad(f"settled with no answer: {', '.join(noans)}", SETTLED_SHAPE)
+    ok(f"all {nset} settled answers carry a rationale") if not nowhy else \
+        bad(f"settled with no rationale: {', '.join(nowhy)} — the rationale is what a compaction destroys",
             SETTLED_SHAPE)
-    ok("all settled answers carry a round tag") if nrnd>=nset else \
-        bad(f"{nset} settled answers but {nrnd} round tags (rN)", SETTLED_SHAPE)
+    ok("all settled answers carry a round tag") if not nornd else \
+        bad(f"settled with no round tag (rN): {', '.join(nornd)}", SETTLED_SHAPE)
+for d in rec.deferred_entries():
+    if not re.sub(r'\(r\d+\)', '', d['reason']).strip(' .—-'):
+        bad(f"{d['id']} is deferred with no reason — the reason is what its marker in the spec says",
+            DEFERRED_SHAPE)
 
 # ---- 6. question ids unique ---------------------------------------------
-# Struck-through text is retracted or superseded, not live. Rule 5 keeps a
-# superseded answer in place as ~~...~~ with the new one beneath it, and
-# undo-round.sh strikes a retracted answer and returns its question to the
-# frontier. Counting struck ids would make both of those legal moves report as a
-# reused identifier, which is the opposite of what the rule asks for.
+# Struck-through text is superseded, not live. Rule 5 keeps a superseded answer
+# in place as ~~...~~ with the new one beneath it. Counting struck ids would make
+# that legal move report as a reused identifier, which is the opposite of what
+# the rule asks for.
 live=re.sub(r'~~.*?~~', '', tree)
 ids=re.findall(r'\*\*(Q\d+)', live)
 dup=sorted({i for i in ids if ids.count(i)>1})
@@ -299,56 +320,38 @@ ok("no blocked question waits on a deferred parent") if not orphans else \
     bad(f"deferral not transitive — orphans in Blocked: {', '.join(orphans)}",
         "move the whole blocked subtree to ## Deferred in one step")
 
-# ---- 8. counter VALUES, not just their presence --------------------------
-# Presence-checking the counters makes the guard unfalsifiable: a stale block
-# reports a round the interview never reached and a question count of zero, and
-# the guard reads its thresholds from exactly these numbers.
+# ---- 8. round and phase VALUES, not just their presence -------------------
+# A stale block reports a round the run never reached, and --resume re-enters
+# from exactly these numbers.
+#
+# Round 0 is legal: input that already covers every category gets no clarifying
+# round. The ceiling is the one the record declares, because an amendment
+# continues the numbering of the session before it.
 def num(pat, hay, cast=int):
     m=re.search(pat, hay)
     return cast(m.group(1)) if m else None
 
-mode=(num(r'Mode:\s*(\S+)', proto, str) or '').strip().lower()
-CAP=Record.ROUND_CAP
 rnd=num(r'Round:\s*(\d+)', proto)
 cap=num(r'Round:\s*\d+\s*of\s*(\d+)', proto)
 nextp=num(r'Next phase:\s*(\d+)', proto)
-qc=num(r'questions\s+(\d+)', proto)
-guard_tripped = bool(re.search(r'Guard:\s*tripped', proto, re.I))
 
 problems=[]
-if rnd is not None and rnd < 1 and not closed:
-    problems.append(f"Round is {rnd} — a record exists, so at least round 1 has been rendered")
-if mode in CAP and rnd is not None and rnd > CAP[mode]:
-    problems.append(f"Round {rnd} exceeds the hard ceiling for mode '{mode}' ({CAP[mode]})")
+if 'Round:' in proto and (rnd is None or cap is None):
+    problems.append("Round is not written as 'Round: <n> of <m>'")
+if 'Next phase:' in proto and nextp is None:
+    problems.append("Next phase is not a number")
 if cap is not None and rnd is not None and rnd > cap:
     problems.append(f"Round {rnd} is past the declared cap of {cap}")
 if nextp is not None and not 0 <= nextp <= 7:
     problems.append(f"Next phase: {nextp} — the pipeline has phases 0 through 7")
-# The record is the ground truth for the two counters derivable from it.
-seen_q=len(set(re.findall(r'\*\*(Q\d+)', tree)))
-if qc is not None and seen_q > qc:
-    problems.append(f"questions counter is {qc} but {seen_q} distinct question ids appear in the record")
-if rnd is not None and nrnd:
-    highest=max(int(m) for m in re.findall(r'\(r(\d+)\)', sb))
+if rnd is not None and rounds:
+    highest=max(rounds)
     if highest > rnd:
         problems.append(f"a settled answer is tagged (r{highest}) but Round says {rnd}")
 if problems:
-    for p in problems: bad(f"protocol counter: {p}", PROTO_SHAPE)
+    for p in problems: bad(f"protocol: {p}", PROTO_SHAPE)
 else:
-    ok("protocol counters are internally consistent")
-
-# ---- 8b. the guard's own arithmetic --------------------------------------
-# Thresholds come from record.py so the checker and bump-protocol.sh cannot
-# disagree about what "at threshold" means, and they are mode-relative: a fixed
-# fact-finder threshold scored the mode's own mandate rather than the interview.
-over=rec.guard_over()
-if len(over)>=2 and not guard_tripped:
-    bad(f"guard says 'not tripped' but {len(over)} counters are at threshold: {', '.join(over)}",
-        "Guard: tripped   — then stop grilling, defer the open questions and go to Phase 5 (R5)")
-elif len(over)<2 and guard_tripped:
-    note(f"guard says 'tripped' but only {len(over)} counter(s) are at threshold — early stops are allowed, just confirm it was deliberate")
-else:
-    ok(f"guard state agrees with the counters ({len(over)} at threshold)")
+    ok("protocol round and phase are consistent with the record")
 
 # ---- 9. every ## Reads entry resolves to a real file ---------------------
 # Phase 5 opens tree.md plus exactly these files, often in a fresh session. A
@@ -363,13 +366,7 @@ else:
     # itself — including the external-path rule a principles file in ~ depends on
     # — lives in Record.ghost_reads, because a second copy of it here is a second
     # thing to keep in step with tree-format.md.
-    ancestors=[]
-    cur=os.path.abspath(root)
-    while True:
-        parent=os.path.dirname(cur)
-        if parent==cur: break
-        ancestors.append(parent); cur=parent
-    ghosts=rec.ghost_reads(root, ancestors)
+    ghosts=rec.ghost_reads(root, search_roots(root)[1:])
     external=[p for p in paths if is_external_path(p) and p not in ghosts]
     if ghosts:
         for g in ghosts:
@@ -380,7 +377,93 @@ else:
         ok(f"all {len(paths)} ## Reads entries resolve"
            + (f" ({len(external)} outside the repo)" if external else ""))
 
-# ---- 10. history overflow ------------------------------------------------
+# ---- 9b. a decision taken from the input keeps the input's wording --------
+# An (r0) entry is what every requirement citing it is later compared with. One
+# written from a document says which, so its answer can be held against that
+# document here: a paraphrase is a new decision nobody made, and nothing
+# downstream has the document to notice.
+if rnd is not None and cap is not None:
+    first_session = cap - 2 <= 0
+    doc_text = {}
+    for p_ in rec.reads():
+        full = resolve_path(p_, search_roots(root))
+        if full and os.path.isfile(full):
+            with open(full, errors='replace') as fh:
+                doc_text[p_] = fh.read()
+    r0_checked = 0; r0_fail = fail; unsourced = []
+    for e in settled:
+        if e['round'] != 0:
+            continue
+        named = [p_ for p_ in doc_text if p_ in e['why'] or os.path.basename(p_) in e['why']]
+        if not named:
+            if 'request' not in e['why'].lower():
+                unsourced.append(e['id'])
+            continue
+        share = max((wording_overlap(e['answer'], doc_text[p_]) for p_ in named),
+                    key=lambda v: -1 if v is None else v)
+        if share is None:
+            continue
+        r0_checked += 1
+        if share < 0.5:
+            msg = (f"{e['id']} is said to come from {named[0]}, but only {share:.0%} of its answer is that "
+                   f"document's wording — an (r0) answer is the sentence that decides, copied, not a summary of it")
+            bad(msg, "the document's own words after the arrow; trim around them, add nothing") \
+                if first_session else note(msg + " (the document may have changed since)")
+    if unsourced:
+        msg = (f"tagged (r0) without saying where the decision came from: {', '.join(unsourced)}")
+        shape = ("*Why:* <reason>. From docs/briefs/retry.md, \"Decided\". (r0)   — the path as ## Reads lists it\n"
+                 "*Why:* <reason>. Stated in the request. (r0)")
+        bad(msg, shape) if first_session else note(msg)
+    if r0_checked and fail == r0_fail:
+        ok(f"{r0_checked} decision(s) taken from an input document keep its wording")
+
+# ---- 10. grounding facts: numbered once, sourced, citing real lines -------
+# Every requirement that cites a fact inherits whatever is wrong with it, and
+# nothing downstream opens the file again. A path that is not on disk, or a line
+# past the end of the file, was never read by whoever reported it.
+flist=rec.grounding_fact_list()
+nums=[n for n,_ in flist]
+dupf=sorted({n for n in nums if nums.count(n)>1}, key=int)
+if dupf:
+    bad(f"grounding fact number used twice: {', '.join(dupf)} — a tag naming it cannot say which one it means",
+        "each fact keeps its own number")
+roots=search_roots(root)
+scope=num(r'Scope:\s*(\S+)', proto, str)
+# Facts from an earlier session describe the code as it was then. They are
+# reported, not failed: only this session's facts can have been checked today.
+session_start=cap-2 if cap is not None else 0
+n_cites=0; fact_fail=fail
+for n,text in flist:
+    src=FACT_SUFFIX.search(text)
+    if not src:
+        bad(f"grounding fact {n} does not say where it came from",
+            "<fact> (fact-finder, r0, high)   or   <fact> (read at intake, r0, high)")
+    current=src is None or int(src.group(2))>=session_start
+    refuted=FACT_VERDICT.search(text) is not None
+    for path,line in rec.fact_citations(text):
+        n_cites+=1
+        full=resolve_path(path, roots)
+        if full is None and scope and scope!='none' and not is_external_path(path):
+            full=resolve_path(os.path.join(scope, path), roots)
+        if full is None:
+            if '/' in path and current and not refuted:
+                bad(f"grounding fact {n} cites {path}:{line}, and no such file exists — a fact is recorded from a file that was opened",
+                    "the path as it is on disk, from the repository root")
+            else:
+                note(f"grounding fact {n} cites {path}:{line}, which was not found"
+                     + ("" if '/' in path else " — write the path from the repository root so it can be checked"))
+            continue
+        if not os.path.isfile(full):
+            continue
+        with open(full, errors='replace') as fh:
+            length=sum(1 for _ in fh)
+        if line>length:
+            msg=f"grounding fact {n} cites line {line} of {path}, which has {length} lines"
+            bad(msg, "the line the fact was read from") if current else note(msg + " — it may have changed since")
+if flist and fail==fact_fail:
+    ok(f"{len(flist)} grounding fact(s) sourced" + (f", {n_cites} citation(s) point at real lines" if n_cites else ""))
+
+# ---- 11. history overflow ------------------------------------------------
 n=len(L)
 if n>400 and section('History') is None:
     note(f"{n} lines and no ## History section — move superseded Settled entries there")
@@ -391,17 +474,18 @@ print()
 mode=' (closed-world)' if closed else ''
 if fail==0:
     print(f"TREE OK{mode}{f' ({warn} warning(s))' if warn else ''}"); sys.exit(0)
-print(f"{fail} PROBLEM(S) — fix before the next round"); sys.exit(1)
+print(f"{fail} PROBLEM(S) — fix before going on"); sys.exit(1)
 PYEOF
 )
 
 status=$?
 
-# 0 = clean, 1 = findings the checker reported. Anything else means it never ran,
-# and a checker that did not run must not read as a pass.
-if [ "$status" -gt 1 ]; then
+# 0 = clean, 1 = findings the checker reported. A crash also exits 1, with no
+# result line, and a checker that did not reach a verdict must not read as a
+# list of findings or as a pass.
+if [ "$status" -gt 1 ] || ! printf '%s\n' "$out" | grep -qE '^(TREE OK|[0-9]+ PROBLEM)'; then
   [ -n "$out" ] && echo "$out"
-  echo "FAIL  checker did not run to completion (python3 exited $status)"
+  echo "FAIL  checker did not reach a verdict (python3 exited $status)"
   exit 2
 fi
 

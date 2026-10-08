@@ -2,14 +2,14 @@
 #
 # The schema says what a finding must LOOK like. It cannot say whether the
 # finding is about a rule that exists, because the schema does not have the
-# catalogue. So a document naming rule "totally-invented-rule-id" at guideline
-# "7.9.9(z)" — a section Apple does not have — passed validation cleanly, and so
-# did a real rule cited at the wrong number and a softened severity.
+# catalogue: a document naming rule "totally-invented-rule-id" at guideline
+# "7.9.9(z)" — a section Apple does not have — is schema-valid, and so is a real
+# rule cited at the wrong number with a softened severity.
 #
 # The contract's two rules about invention are R2, never emit a finding for a
 # rule not in the catalogue, and R3, never state a guideline number a rule does
-# not carry. Both were enforced by instruction only. An instruction is a request
-# made of a language model; this is the check that makes them facts.
+# not carry. In the skill they are instructions, and an instruction is a request
+# made of a language model; this check is what makes them hold.
 #
 # Severity is included because the agent card already says "Severity comes from
 # the rule and you do not change it". A claim stated in prose and enforced
@@ -25,11 +25,17 @@ CATEGORIES = ["safety", "performance", "business", "design", "legal"]
 
 
 def load_catalogue(rules_dir):
-    """Maps rule id -> the fields a finding is not allowed to restate wrongly."""
-    catalogue = {}
+    """Returns (rule id -> the fields a finding may not restate wrongly, missing files).
+
+    A category file that is not there is reported, not skipped: with it absent,
+    every finding from that category would be refused as citing an invented
+    rule, which blames the subagent for a broken installation.
+    """
+    catalogue, missing = {}, []
     for category in CATEGORIES:
         path = os.path.join(rules_dir, f"{category}.json")
         if not os.path.exists(path):
+            missing.append(path)
             continue
         with open(path, encoding="utf-8") as fh:
             doc = json.load(fh)
@@ -40,7 +46,7 @@ def load_catalogue(rules_dir):
                 "severity": rule["severity"],
                 "verifiability": rule["verifiability"],
             }
-    return catalogue
+    return catalogue, missing
 
 
 def check_item(item, record, where, kind, problems):
@@ -110,9 +116,11 @@ def main(argv):
         print("usage: check_findings.py <findings.json> [rules-dir]", file=sys.stderr)
         return 2
     rules_dir = argv[2] if len(argv) > 2 else os.path.join(PLUGIN, "rules")
-    catalogue = load_catalogue(rules_dir)
-    if not catalogue:
-        print(f"      no catalogue could be loaded from {rules_dir}")
+    catalogue, missing = load_catalogue(rules_dir)
+    if missing:
+        for path in missing:
+            print(f"      catalogue file {path} does not exist — the findings cannot be "
+                  "checked against an incomplete catalogue")
         return 1
     problems = check_file(argv[1], catalogue)
     for problem in problems:

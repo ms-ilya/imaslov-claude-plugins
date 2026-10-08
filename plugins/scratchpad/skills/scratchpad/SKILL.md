@@ -1,15 +1,12 @@
 ---
 name: scratchpad
 description: >-
-  Context-preserving bug-fixing scratchpad that persists investigation state,
-  failed approaches, architectural decisions, and knowledge across sessions via
-  .md files. Use this skill whenever the user explicitly invokes /scratchpad or
-  writes something like "use scratchpad skill", "scratchpad this", "open
-  scratchpad", "check scratchpad", "update scratchpad", or "scratchpad
-  resolve/abandon/switch". This skill NEVER activates on its own — only when the
-  user calls it. Covers creating, updating, resolving, abandoning, and managing
-  .scratchpads/ files for any debugging or investigation workflow.
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash
+  Bug-fixing scratchpad that persists investigation state, failed approaches,
+  decisions and findings across sessions in .scratchpads/ files. Use only
+  when the user names it: /scratchpad, "use the scratchpad", "scratchpad
+  this", "open/check/update scratchpad", or "scratchpad resolve/abandon/switch".
+  Do not start one on your own because a debugging session is under way.
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(mkdir -p *), Bash(mv *)
 ---
 
 # Scratchpad Skill
@@ -30,7 +27,7 @@ Every `/scratchpad` call runs one automatic flow. No sub-commands. The user's me
 
 Determine project root: use `git rev-parse --show-toplevel` if in a git repo, otherwise use the current working directory. All `.scratchpads/` paths are relative to this root — resolve to absolute paths for all tool calls.
 
-- **First call in conversation?** Use Glob to scan `.scratchpads/SP-*.md` at the project root.
+- **First call in conversation?** List `.scratchpads/SP-*.md` at the project root.
   - No folder or no `.md` files → Create new (propose a name, ask user to confirm). If no clear issue in conversation, ask the user to describe it first.
   - One active scratchpad → Auto-select it, confirm to user.
   - Multiple active scratchpads → List them with status, ask user to pick (or create new). If >10 active scratchpads, show the 5 most recently modified + total count.
@@ -45,7 +42,7 @@ Always re-read the scratchpad file from disk before doing anything. Never trust 
 
 Focus on conversation content not yet captured in the scratchpad. If this is the first call in a long conversation, focus on the most recent ~20-30 exchanges — tell the user if you suspect earlier messages contain uncaptured findings.
 
-**Dedup strategy:** Before adding any finding, check the scratchpad for matches. Use Grep on the scratchpad file for key identifiers (file paths, function names, approach descriptions). If a match exists, the finding is already recorded — skip it.
+**Dedup strategy:** Before adding any finding, check the scratchpad for matches. Search the scratchpad file for key identifiers (file paths, function names, approach descriptions). If a match exists, the finding is already recorded — skip it.
 
 **Contradictory findings:** If the conversation contains contradictions (e.g., "bug is in file A" then later "actually, it's in file B"), record only the latest understanding. If the earlier version is already in the scratchpad, update it and note: "Corrected: previously [X], now [Y]."
 
@@ -70,7 +67,7 @@ Focus on conversation content not yet captured in the scratchpad. If this is the
 
 ### Step 4: WRITE — Apply changes
 
-- **New scratchpad?** Read `references/template-active.md` for the structure. Create with Write tool, populated from context.
+- **New scratchpad?** Read `${CLAUDE_SKILL_DIR}/references/template-active.md` for the structure. Create with Write tool, populated from context.
 - **Existing + new findings?** Use Edit tool to append new content to appropriate sections (see Tool Strategy). Never modify existing failed approaches — they are sacred during active debugging.
 - **Existing + nothing new?** Tell user: *"Scratchpad is up to date."* Show a one-line status summary.
 - Update status per valid transitions only (see Status Workflow).
@@ -101,7 +98,7 @@ Triggered when user clearly intends to mark the scratchpad as done/fixed. Uses o
 1. **Confirm with user**: "This will delete all Failed Approaches, rewrite the description as a knowledge artifact, and move the file to `resolved/`. Proceed?"
 2. If edge cases are unchecked → warn the user, proceed only if they confirm.
 3. **Transfer insights**: Before deleting Failed Approaches, extract all "Actual insight" lines. Verify each is incorporated into the resolved description or explicitly noted as no longer relevant.
-4. **Transform** the scratchpad — read `references/template-resolved.md` for the target structure:
+4. **Transform** the scratchpad — read `${CLAUDE_SKILL_DIR}/references/template-resolved.md` for the target structure:
    - Delete all "Failed Approaches"
    - Rename `## Issue Description` → `## Description`. Rewrite as a clean 3–8 sentence past-tense knowledge artifact. Every claim must be traceable to existing scratchpad content — do not add explanations not recorded during investigation.
    - Populate `## Solution` from the successful fix — the approach that worked. If the working fix isn't recorded in the scratchpad (e.g., user fixed it outside the scratchpad workflow), ask the user to describe it before resolving. Do not invent solution details.
@@ -177,21 +174,21 @@ Every word costs tokens every time the scratchpad is loaded in future sessions.
 
 ## Tool Strategy
 
-- **Glob**: Scan `.scratchpads/SP-*.md` and `.scratchpads/resolved/SP-*.md` for discovery. Use for LOCATE step.
-- **Read**: Fetch scratchpad content from disk before any write. Read templates from this skill's `references/` directory when creating or transforming. Always use absolute paths.
+- **Listing**: Find `.scratchpads/SP-*.md` and `.scratchpads/resolved/SP-*.md` for the LOCATE step with the Glob tool where the session has one, otherwise `ls` through Bash (on macOS and Linux the main session has no Glob or Grep tool).
+- **Read**: Fetch scratchpad content from disk before any write. Read templates from `${CLAUDE_SKILL_DIR}/references/` when creating or transforming. Always use absolute paths.
 - **Edit**: Preferred for updates to existing scratchpads (append findings, condense, status change). Use the last line of the target section as anchor in `old_string`, then replace with anchor + new content in `new_string`. This avoids accidentally modifying sacred failed approaches.
 - **Write**: Only for new scratchpad creation and full resolve transformation (entire content is rewritten). Before the first Write in a project, create the directory via Bash: `mkdir -p .scratchpads/`.
-- **Grep**: Search scratchpad content by keyword when needed (e.g., checking if a finding is already recorded).
-- **Bash**: File moves (`mkdir -p .scratchpads/resolved && mv <source> <target>`), line count checks (`wc -l`), project root detection (`git rev-parse --show-toplevel`). Never use Bash for grep/find — use Glob or Grep instead.
+- **Searching**: Search scratchpad content by keyword when needed (e.g., checking if a finding is already recorded), with the Grep tool or `grep` through Bash.
+- **Bash**: File moves (`mkdir -p .scratchpads/resolved && mv <source> <target>`), line count checks (`wc -l`), project root detection (`git rev-parse --show-toplevel`), and listing or searching where the session has no Glob or Grep tool.
 
 If file operations fail due to permissions or missing paths, inform the user of the specific error.
 
 ## Templates
 
-Read templates from this skill's `references/` directory. You must call Read on the template file — do not generate the structure from memory.
+Read the template file before writing; do not generate the structure from memory, because the section names and order are what later sessions rely on to find things.
 
-- **`references/template-active.md`** — Structure for active (investigating/attempted) scratchpads. Includes Failed Approach format. Only include sections that have content.
-- **`references/template-resolved.md`** — Structure for resolved scratchpads after transformation.
+- **`${CLAUDE_SKILL_DIR}/references/template-active.md`** — Structure for active (investigating/attempted) scratchpads. Includes Failed Approach format. Only include sections that have content.
+- **`${CLAUDE_SKILL_DIR}/references/template-resolved.md`** — Structure for resolved scratchpads after transformation.
 
 ---
 

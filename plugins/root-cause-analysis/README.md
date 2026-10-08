@@ -12,12 +12,12 @@ Claude follows dependency chains and determines what went wrong. The output is a
 
 ## How it works
 
-Claude runs a 4-phase investigation. You get a checkpoint between each phase.
+Claude runs a 4-phase investigation. It states its scope and what it found as it goes, and stops to ask only when your answer changes what it does next.
 
 ```
-Phase 0: Understand the Symptom  →  Clarify with user, determine scope → ✓ Scope checkpoint
-Phase 1: Gather Evidence          →  Grep, Read, git history, parallel agents (Full) → ✓ Evidence checkpoint
-Phase 2: 5 Whys Analysis          →  Build evidence-backed causal chain, confidence rating → ✓ Root cause checkpoint
+Phase 0: Understand the Symptom  →  Clarify an unclear symptom, state the scope and proceed
+Phase 1: Gather Evidence          →  Grep, Read, git history, parallel agents (Full) → evidence summary; asks if the evidence splits or the scope must grow
+Phase 2: 5 Whys Analysis          →  Build evidence-backed causal chain, confidence rating → ✓ Root cause confirmed before a report is written
 Phase 3: Report & Solutions        →  Write RCA report, propose systemic fixes
 ```
 
@@ -44,7 +44,7 @@ Solutions target the system, not the person. "Add CI performance tests" over "tr
 ### Verification
 
 Every finding is checked against the actual codebase:
-- File paths checked with Glob before inclusion
+- File paths checked for existence before inclusion
 - Code behavior confirmed via Read (never inferred from names)
 - Git history cited from actual `git log`/`git blame` output
 - Git SHAs verified with `git show --stat` before citing
@@ -55,7 +55,7 @@ Every finding is checked against the actual codebase:
 
 | Skill | Trigger | What it does |
 |-------|---------|--------------|
-| `/root-cause-analysis` | "investigate this bug", "root cause", "why does this keep happening", "what caused this regression", "postmortem", "flaky test", "why does CI fail", "trace this error" | Evidence-backed root cause investigation |
+| `/root-cause-analysis` | "root cause analysis", "RCA", "postmortem", "what's the root cause of this regression / incident / flaky test" | Evidence-backed root cause investigation. Ordinary "fix this bug" requests are left to normal debugging |
 
 You can pass arguments too: `/root-cause-analysis <description of the symptom>`
 
@@ -74,14 +74,13 @@ You can pass arguments too: `/root-cause-analysis <description of the symptom>`
 
 | Tool | Purpose |
 |------|---------|
-| Grep | Search for error messages, function names, patterns across the codebase |
-| Glob | Find relevant files (tests, configs, migrations) and verify file paths exist |
+| Grep | Search for error messages, function names, patterns across the codebase (`grep` through Bash where the session has no Grep tool) |
+| Glob | Find relevant files (tests, configs, migrations) and verify file paths exist (`find` through Bash where the session has no Glob tool) |
 | Read | Examine source code, read reference templates |
 | Bash | Git operations: `git log`, `git blame`, `git diff`, `git show`, `git bisect` |
 | Agent | Full scope: 2 parallel investigation agents (Code+Data, Infrastructure+Process). Standard: optional Explore agent |
 | Write | Create RCA report file (Standard/Full scope) |
-| AskUserQuestion | Scope confirmation, evidence checkpoint, validate root cause hypothesis |
-| TodoWrite | Track investigation progress |
+| AskUserQuestion | Clarify an unclear symptom, resolve split evidence or a scope upgrade, confirm the root cause before a report is written |
 
 ## Design principles
 
@@ -89,7 +88,7 @@ You can pass arguments too: `/root-cause-analysis <description of the symptom>`
 2. Evidence over guessing - every claim backed by actual findings
 3. Fix the system, not the person - improve processes, do not blame people
 4. Simple bugs get simple treatment
-5. User stays in control - checkpoints at scope, evidence, and root cause
+5. User stays in control - scope and evidence are stated as the work proceeds, and the root cause is confirmed before a report is written
 6. Every finding carries a confidence level
 7. Keeps AI context usage low with limits, summaries, and parallel agents
 8. Blameless - focus on what happened and why, not who did it

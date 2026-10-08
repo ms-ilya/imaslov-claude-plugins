@@ -44,7 +44,7 @@ rejected alternatives, which satisfies one test out of three. Run all three.
 
 ## Where ADRs go
 
-The spec directory is the only directory this plugin owns — ADRs are the single
+The spec root is the only directory this plugin owns — ADRs are the single
 exception, because an ADR nobody can find at the conventional path is not an ADR.
 The exception is paid for with three rules:
 

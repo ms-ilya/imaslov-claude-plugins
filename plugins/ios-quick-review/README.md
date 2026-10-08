@@ -35,8 +35,8 @@ Phase 7: Side Effects       →  Hidden mutations, order-dependent operations, A
 
 - **No fabricated findings** - reads actual code before reporting, includes real snippets, rechecks line numbers before writing each finding
 - **Scales to diff size** - small diffs run fast (~1 min), large diffs split into batches across parallel agents
-- **Phase 1 checkpoint** - shows what will be reviewed and asks for confirmation before deep analysis starts
-- **Progress tracking** - a checklist of phases with live status updates
+- **Phase 1 checkpoint** - shows what will be reviewed, and asks for confirmation before deep analysis when the scope is ambiguous or the diff is large
+- **Progress tracking** - names the phases up front and reports each one as it runs
 - **Traces usage** - every changed function or variable is searched across the entire project; unchanged files that might be affected get flagged
 
 ### How it scales
@@ -77,13 +77,11 @@ You can pass arguments: `/ios-quick-review <commit SHA or PR number>`
 | Tool | Purpose |
 |------|---------|
 | **Read** | Read source files to verify findings; re-read before writing each finding |
-| **Grep** | Find symbol usages, call sites, protocol conformances across the project |
-| **Glob** | Discover project structure, find files by pattern (`*.swift`, `*Tests.swift`) |
-| **Bash** | Git commands only - `git diff`, `git log`, `git show`, `git status`, `gh pr diff` |
+| **Search** | Find symbol usages, call sites, conformances and files by pattern: the Grep and Glob tools where the session has them, otherwise `grep` and `find` through Bash |
+| **Bash** | Read-only git and `gh` commands - `git diff`, `git log`, `git show`, `git status`, `gh pr diff` |
 | **Agent** | Parallelize call-site tracing (10+ symbols) and large-diff reviews (15+ files) |
 | **Write** | Save full review report to file for reviews with 20+ findings |
-| **TodoWrite** | Track review progress across phases with real-time status updates |
-| **AskUserQuestion** | Phase 1 checkpoint - confirm scope before deep analysis |
+| **AskUserQuestion** | Phase 1 checkpoint - confirm scope before deep analysis when it is ambiguous or the diff is large |
 
 ## Git state and prerequisites
 

@@ -5,6 +5,7 @@ description: >-
   Memory Bank. Use this skill when the user says "add decision for X",
   "record decision for X", "decision for feature X", or provides a decision
   in the format "feature: decision description".
+argument-hint: "<feature name>: <decision>"
 allowed-tools: Read, Write, Edit, Glob
 ---
 

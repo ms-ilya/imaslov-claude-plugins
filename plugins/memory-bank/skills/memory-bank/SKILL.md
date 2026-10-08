@@ -24,7 +24,7 @@ The Memory Bank captures **what is true right now** about a project, organized b
 1. **Current state only** — no date-stamped entries, no "on Jan 5 we changed X"
 2. **Feature-centric** — each feature gets its own folder with a consistent file set
 3. **Fast context loading** — read WIKI.md → pick a feature → be productive
-4. **Anti-hallucination** — every file path, type name, and behavioral claim is verified against actual source code using dedicated tools (Grep, Glob, Read)
+4. **Anti-hallucination** — every file path, type name, and behavioral claim is verified against actual source code by a search or a read run in the session, never from memory
 5. **Language-agnostic** — works on any codebase; detects language and adapts verification
 
 ## Memory Bank Structure
@@ -60,14 +60,14 @@ If the user's intent is ambiguous, ask which workflow they need.
 
 ## Key Guarantee
 
-Every Memory Bank file is verified against actual source code — file paths via `Glob`, type names via `Grep`, behavioral claims via `Read`. Unverifiable content is flagged `⚠️ INFERRED` or removed. Full verification procedure is in the sub-skills and `references/verification.md`.
+Every Memory Bank file is verified against actual source code — file paths and type names by searching for them, behavioral claims by reading the function body. Unverifiable content is flagged `⚠️ INFERRED` or removed. Full verification procedure is in the sub-skills and `references/verification.md`.
 
 ## Reference Files
 
-Shared references live in this skill's `references/` directory. Sub-skills access them via `../memory-bank/references/`.
+Shared references live in this skill's `references/` directory. Sub-skills read them from the same absolute paths.
 
 | Reference | When to read |
 |-----------|-------------|
-| `references/templates.md` | Just before writing each file (read only the relevant section) |
-| `references/verification.md` | At verification time (not during Pre-Flight) |
-| `references/swift-intelligence.md` | Only for Swift/iOS/macOS projects |
+| `${CLAUDE_SKILL_DIR}/references/templates.md` | Just before writing each file (read only the relevant section) |
+| `${CLAUDE_SKILL_DIR}/references/verification.md` | At verification time (not during Pre-Flight) |
+| `${CLAUDE_SKILL_DIR}/references/swift-intelligence.md` | Only for Swift/iOS/macOS projects |

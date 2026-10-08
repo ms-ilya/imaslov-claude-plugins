@@ -1,34 +1,35 @@
 # Round format
 
-A round is **one `AskUserQuestion` call plus one markdown block.** They render
-differently and have different limits, and only one of them shows your prose.
-Writing a round as if it were all markdown is the mistake this file prevents.
+A round is **one markdown block followed by one `AskUserQuestion` call.** They
+render differently and have different limits. The block is your message; the
+picker shows only its own fields. Anything the user needs in order to answer has
+to be in a field or in the block above the call, because text written after the
+call is not seen until the picker has been answered.
 
-The format is deliberately invariant. A round looks identical whether the feature
-is a screen, a service or a migration — form fixed, content free.
+The format is the same every round, whatever the feature.
 
 ## Contents
 - The two channels
 - The field mapping
-- Ten channel rules
+- Two more rules
 - Content discipline
 - Round layout, in order
-- Facts before the round, never during it
-- How round 2+ differs
+- How round 2 differs
 
 ## The two channels
 
 | | **Channel A** — `AskUserQuestion` | **Channel B** — markdown |
 |---|---|---|
 | Carries | closed questions, 2–4 mutually exclusive answers | open questions, grounding recap, coverage table, the offer |
-| Rendered as | a picker — **surrounding markdown is not shown** | the assistant message |
+| Rendered as | a picker showing only its own fields | the assistant message |
 | Hard limits | ≤4 questions per call, 2–4 options each | none |
 | Per question | `header` ≤12 chars · `question` prose · `multiSelect` · `options[]` | free |
 | Per option | `label` 1–5 words · `description` prose | free |
 | Always added | an **"Other"** option, automatically | — |
 
-**≤5 questions per round across both channels.** Four closed plus one open is the
-usual shape. Five open is legal; five closed is not — the picker caps at four.
+**≤5 questions per round across both channels** (R9). Four closed plus one open
+is the usual shape. Five open is legal; five closed is not — the picker caps at
+four. When fewer earn a slot, ask fewer.
 
 ## The field mapping
 
@@ -51,43 +52,40 @@ options:
 Three consequences that are easy to lose:
 
 1. **"Why it matters" goes inside `question`.** A separate line above the call is
-   never displayed. This is the single most likely way to lose the rule.
+   not part of the picker.
 2. **The recommendation is the first option, with `(Recommended)` appended to the
    label** — not bolded prose, not a sentence afterwards. Labels are 1–5 words,
    so the *reason* lives in `description`.
-3. **"Other" always exists.** Design for it: an Other answer is recorded verbatim
-   as the decision. If it raises a new question, that question joins the frontier
-   for the next round — it never reopens this one.
+3. **"Other" always exists.** An Other answer is recorded verbatim as the
+   decision. If it raises a new question, that question joins the frontier for
+   the next round — it never reopens this one.
 
 `multiSelect: true` is right for exactly one shape: *"which of these are in
-scope?"* A multi-select on a genuine either/or produces an unanswerable spec.
+scope?"*, or its twin *"which of these belong in the first shippable slice?"* A
+multi-select on a genuine either/or produces an unanswerable spec.
 
-`preview` is single-select only and renders monospace, side by side. It is wasted
-on interview questions and it is exactly right for **strategy selection**, where
-the user compares shapes rather than answering a question. Blocks are ≤12 lines
-and show *shape*, never full code — a preview long enough to be an
-implementation has stopped comparing and started prescribing.
+`preview` is single-select only and renders monospace, side by side. It is for
+**strategy selection**, where the user compares shapes, and never for a round.
+Blocks are ≤12 lines and show *shape*, never full code.
 
-## Ten channel rules
+## Two more rules
 
-1. ≤5 questions per round, split across the channels. ≤4 in the picker.
-2. **One `AskUserQuestion` call per round, never two.** Two pickers is hostile.
-3. `header` ≤12 characters. It is a chip, not a summary.
-4. `label` is 1–5 words; the reason lives in `description`.
-5. The recommended option is first, `(Recommended)` appended to its label.
-6. "Why it matters" is appended to the `question` field. Anywhere else it is not
-   rendered.
-7. `multiSelect: true` only for "which of these are in scope".
-8. `preview` never appears in the interview — only in strategy selection.
-9. "Other" always exists. Record an Other answer verbatim as settled.
-10. **If `AskUserQuestion` is unavailable, the whole round renders as Channel B**
-    as one numbered block. The cap and the content rules do not change. Never
-    fail on it.
+- **One `AskUserQuestion` call per round, never two.** Two pickers in a row read
+  as an interrogation.
+- **If `AskUserQuestion` is unavailable, the whole round is Channel B**, as one
+  numbered block. The cap and the content rules do not change. Number the
+  questions by their ids in the record, keep a closed question's options as a
+  lettered list with the recommended one first and labelled, say that an answer
+  in the user's own words is accepted, and leave out the line announcing a
+  picker.
 
 ## Content discipline
 
-**Every question carries a recommendation, and every recommendation cites
-something.** The repo, a stated constraint, or a named trade-off.
+**Every question carries a recommendation, and the recommendation says what it
+rests on**: the repo, a stated constraint, or a trade-off you can name. When
+general practice is all there is, say that it is general practice. When you have
+no basis to recommend anything, say so and ask anyway; a reason made up to fill
+the slot is worse than none.
 
 | ✗ Ungrounded | ✓ Grounded |
 |---|---|
@@ -104,36 +102,32 @@ test. Never "this is important".
 
 ## Round layout, in order
 
+Everything but the picker is one markdown block, and the picker comes last.
+
 1. **Grounding block** — round 1 only, under ten lines: what was found, with
-   paths, and **what it made unnecessary to ask.** Round 2+ replaces it with a
-   one-line recall of any *new* facts, or nothing.
-2. **Header** — `Round n of m`, plus a one-line warning that a picker follows. A
-   picker arriving with no preamble reads as an interruption.
-3. **Channel A** — the picker.
-4. **Channel B** — open questions, numbered, each with a suggestion and a
-   why-it-matters.
-5. **The offer** — `skip` defers a question; `stop` ends the interview and drafts
-   from what exists. Offered **every round**, not once at the start. That is the
-   difference between a bounded interview and an interrogation.
-6. **Coverage table** — printed every round even when nothing moved, with a line
-   explaining anything that did not move.
+   paths, and what it made unnecessary to ask. When Phase 1 already showed this,
+   do not repeat it.
+2. **Coverage table**, with a line on anything that did not move since the last
+   one.
+3. **Open questions**, numbered, each with a suggestion and a why-it-matters.
+   Then, when there are any, the defaults you are taking as given unless
+   corrected: one line each, no question mark.
+4. **The offer** — `skip` defers a question; `stop` ends the interview and drafts
+   from what exists. Offered every round.
+5. **One line saying a picker follows**, then the `AskUserQuestion` call.
 
-**No preamble, no praise.** The round opens on the grounding block or on Q1.
+When the round has open questions, end your turn after the picker so the user
+can answer them in a reply. When every question was in the picker, its result is
+the round's answers and the run goes straight on.
 
-## Facts before the round, never during it
+**No preamble, no praise.** The block opens on the grounding or on the table.
 
-It is not mechanically possible to hold a user prompt open while agents run. A
-fact needed for a question must be found **before** the round is rendered. A fact
-that turns out to be needed mid-round becomes a grounding task for the *next*
-round — never a pause in this one.
+A fact needed for a question is found before the round is rendered (R2). One
+that turns out to be needed mid-round becomes a grounding task for the next
+round, never a pause in this one.
 
-## How round 2+ differs
+## How round 2 differs
 
-Only three things: no grounding block; questions may reference settled answers by
-number (*"given Q2 → shared in-flight work, what should a second caller see if it
-fails?"*); and the coverage table's "Was" column holds the previous round's
-values.
-
-The header, the cap, the two channels, the recommendations, the why-it-matters
-discipline and the `skip`/`stop` offer are identical every round. **The format
-does not evolve.**
+There is no grounding block, and questions may refer to settled answers by
+number (*"given Q2 → shared in-flight work, what should a second caller see if
+it fails?"*). Everything else is the same.

@@ -6,6 +6,7 @@ What it checks:
 - Per-file: force unwraps, memory leaks, threading, Swift Concurrency (`@Sendable`, actor isolation, continuations), unused code, naming
 - Cross-file: duplicate code, breaking API changes (including deleted functions), design violations, over-engineering
 - Test-aware: fewer warnings for test files (force unwraps, naming)
+- Verified: an independent agent re-reads the code behind every critical and warning finding. What it can disprove is moved to a "Dropped by verification" section with the reason; what it cannot decide stays, marked unverified
 - Resumable: picks up where it left off if interrupted
 
 **When to use this vs `ios-quick-review`:** This plugin targets large PRs and branch reviews requiring parallel analysis, cross-file checks (duplicates, breaking changes, design issues), and resumability. `ios-quick-review` fits smaller changes where detailed per-file checks (performance, side effects, compliance) and scope confirmation matter more.
@@ -40,7 +41,7 @@ Run individual stages to split work across sessions or re-run one stage:
 /review-extract <PR number>       # Stage 1: fetch diff and metadata
 /review-analyze                   # Stage 2: per-file analysis (parallel agents)
 /review-cross-check               # Stage 3: DRY, breaking changes, SOLID
-/review-report                    # Stage 4: generate final report
+/review-report                    # Stage 4: verify findings, build final report
 /review-cleanup                   # Remove intermediate files, keep only report
 ```
 
@@ -50,7 +51,7 @@ Run individual stages to split work across sessions or re-run one stage:
 | `/review-extract --base <branch>` | 1. Extract | Same, but from branch diff instead of PR |
 | `/review-analyze` | 2. Analyze | Per-file review: style, unused code, threading, memory, safety |
 | `/review-cross-check` | 3. Cross-check | Cross-file: DRY violations, breaking API changes, SOLID issues |
-| `/review-report` | 4. Report | Aggregate findings into final markdown report |
+| `/review-report` | 4. Report | Verify critical and warning findings, then build the final markdown report |
 | `/review-cleanup` | Cleanup | Remove intermediate files, keep only the final report |
 
 Stages 2-4 depend on stage 1 (they read from `.ios-review-temp/pr-context.json`). Re-running a stage skips work already done. Run `/review-cleanup` after the report to remove temporary JSON files.
@@ -65,7 +66,7 @@ Five agents, parallelized within each stage:
 | `dry-analyzer` | Cross-file: duplicate function detection | Sonnet |
 | `breaking-analyzer` | Cross-file: breaking API changes + deleted functions + affected callers | Sonnet |
 | `solid-analyzer` | Cross-file: design principle violations, over-engineering | Sonnet |
-| `report-aggregator` | Combine all findings into a markdown report | Haiku |
+| `finding-verifier` | Re-read the code behind every critical and warning finding and record a verdict | Session model |
 
 ## Output
 
@@ -74,7 +75,7 @@ Five agents, parallelized within each stage:
 
 ## Resumption
 
-If interrupted, re-run the same command to continue. The analyze stage skips files already processed, cross-check skips if outputs exist, and report can be re-run safely.
+If interrupted, re-run the same command to continue. The analyze stage skips files already processed, cross-check skips if outputs exist, verification skips findings that already have a verdict, and the report is rebuilt by a script, so it can be re-run safely. To start over instead, delete `.ios-review-temp/`.
 
 ## Git state and prerequisites
 

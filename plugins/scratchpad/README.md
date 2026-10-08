@@ -83,11 +83,11 @@ Resolving a scratchpad rewrites it completely:
 
 | Tool | Purpose |
 |------|---------|
-| Glob | Scan `.scratchpads/SP-*.md` for discovery |
+| Glob | Scan `.scratchpads/SP-*.md` for discovery (`ls` through Bash where the session has no Glob tool) |
 | Read | Fetch scratchpad content from disk, read templates |
 | Edit | Append findings to existing scratchpads (preferred for updates) |
 | Write | Create new scratchpads, full resolve transformations |
-| Grep | Check if a finding is already recorded (dedup) |
+| Grep | Check if a finding is already recorded (dedup; `grep` through Bash where the session has no Grep tool) |
 | Bash | `git rev-parse --show-toplevel` (project root), `mv` (resolve/regress), `wc -l` (size check) |
 
 ## Output

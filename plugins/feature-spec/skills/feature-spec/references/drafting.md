@@ -1,139 +1,159 @@
-# Drafting, critique and report — phases 5 to 7
+# Drafting, critique and publishing — phases 5 to 7
 
-Loaded at Phase 5 by both `feature-spec` and `feature-spec-write`, which run the
-same three phases and must run them identically.
+Loaded at Phase 5. The input to everything below is `tree.md` and the files its
+`## Reads` names: not the conversation, not `## History`.
 
-It lives here rather than in either skill for two reasons. The orchestrator is
-bounded by the compaction re-attach budget — only the head of a `SKILL.md` is
-carried forward when the conversation is summarised — and these phases are the
-ones the run needs *last*, so they are the ones most likely to be cut. And a
-second copy in a second skill is a second thing to keep in step.
-
-The input to everything below is `tree.md` and the files its `## Reads` names.
-Nothing else.
+Commands are written with `${CLAUDE_PLUGIN_ROOT}`. `SKILL.md` gives its value.
 
 ---
 
 ## Phase 5 — DRAFT
 
-Load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/spec-template.md` — an instruction file, not content.
+Load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/spec-template.md`. It
+is instructions, not content to copy.
 
-**Read `tree.md` and exactly the files in its `## Reads` list. Nothing else.** No
-re-interview, no `## History`.
+Write the draft to `<specdir>/spec.draft.md`. `spec.md` is never written by
+hand: Phase 7 renames the draft, so the spec that ships is the file that was
+checked and critiqued.
 
-- Deferred items become inline `[NEEDS CLARIFICATION: ...]` markers.
-- Priorities come from the record's `[P1]`/`[P2]`/`[P3]` tags. **Never assign one
-  at drafting time** — that is a decision the user never made.
-- Every requirement, criterion and scenario carries a source tag naming the
-  `tree.md` line it came from. Anything untraceable is **cut or marked, never
-  asserted** (R10).
-- Identifiers are assigned in draft order and **never renumbered**. A withdrawn
+- **Tag every statement that decides something.** Each requirement, criterion,
+  out-of-scope line and implementation constraint names the record entry it came
+  from. A statement with no entry behind it is cut, or kept and marked (R10). A
+  scenario is keyed by its requirement and takes that requirement's sources.
+- **Say what the source says.** A requirement may restate a decision as testable
+  behaviour. It may not add a number, a condition or a case the entry does not
+  contain. When the requirement needs one, that is an open question, not a gap
+  for you to fill.
+- **The opening paragraph and the stories summarise.** They carry no tag, so
+  they say nothing the tagged statements do not.
+- **One marker per deferred question.** Each `## Deferred` entry becomes one
+  `[NEEDS CLARIFICATION: Q<n> — …]` under `## Open questions`. A requirement that
+  depends on it names the question id in words and does not repeat the marker:
+  every marker is counted, and carried into a plan, as its own question.
+- **A decision about how is a constraint.** What the user fixed about a library
+  or where the code lives goes under `## Implementation constraints` with its
+  tag. Nothing else in the spec names a type, a library or a function.
+- **Priorities come from the record's `[P1]`/`[P2]`/`[P3]` tags.** When the
+  record ranks nothing, the stories carry no priority; the ranking is the open
+  question the record already defers. Assigning one here would be a decision the
+  user never made.
+- **`## Clarifications` is copied.** One line per `## Settled` entry: its id,
+  round, title and answer as the record has them, without the priority tag.
+- **Identifiers never move.** They are assigned in draft order. A withdrawn
   requirement stays in place as `(withdrawn)`; a split becomes `007a`/`007b`.
-- A justified principle deviation gets a `## Principle deviations` row quoting
-  the rule verbatim. Silence is the pass.
+- **A justified principle deviation gets a row** under `## Principle
+  deviations`, quoting the rule verbatim. No row means no deviation.
 
-**Do not write `spec.md` yet.** Write the draft to `<specdir>/spec.draft.md`,
-then fix until clean:
-`bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-spec.sh <specdir>/spec.draft.md --tree <specdir>/tree.md`
+Then fix until clean:
 
-**`--tree` is required and the script refuses to run without it.** It resolves
-every source tag against the record — `Settled Q7` must be a question the record
-actually settled, `Grounding fact 3` an item that exists. A tag that is merely
-*shaped* like a tag is the check a fabricated citation passes, so a tag that does
-not resolve fails as a fabricated citation.
+```
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-spec.sh <specdir>/spec.draft.md --tree <specdir>/tree.md
+```
 
-On an **amendment**, add `--prev <specdir>/spec.md`, which is what catches a
-silent renumber. The script refuses a `--prev` it cannot read, so pass a real path
-or omit the flag; never a placeholder. Reworded text under a stable identifier
-**fails** — re-run with `--allow-reword` only once you have confirmed the edit is
-deliberate, so the acknowledgement is recorded rather than assumed.
+The script resolves every source tag against the record: `Settled Q7` has to be
+a question the record settled, `Grounding fact 3` an item that exists. It also
+fails a statement with no identifier, a section the template does not define, an
+untagged scope line or constraint, and a deferred question the draft does not
+carry.
 
-It enforces R10 mechanically — unresolved, untagged or invalid tags, duplicate or
-vanished identifiers, requirements with no scenario, unquantified adjectives, bare
-markers. These are not critic findings: fix them silently. **Delete
-`spec.draft.md` once `spec.md` exists.**
+On an amendment add `--prev <specdir>/spec.md`. Text changed under an existing
+identifier fails; re-run with `--allow-reword` once you have confirmed the
+rewording is deliberate. A statement that moved to another identifier fails
+either way.
 
 ## Phase 6 — CRITIQUE
 
-Skipped in `--fast`.
-
-**Build the packet with the script. Never by hand.**
+One `spec-critic` agent runs all three lenses, on a packet the script builds:
 
 ```
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-packet.sh <specdir>/spec.draft.md --tree <specdir>/tree.md
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-packet.sh <specdir>/spec.draft.md --tree <specdir>/tree.md --out <specdir>/.work/critic-packet.md
 ```
 
-It emits every part the critic needs — the requirement and criterion list with
-source tags, the acceptance scenarios, the coverage table with `Clear*` marks
-intact, the deferred list, chosen and rejected strategies, promoted ADR titles
-**with their decisions**, the principle lines verbatim, the scope boundary, and
-the rubric inline, because the agent cannot resolve a skill path.
+Dispatch the critic with one line: the absolute path of the packet, and that the
+packet is the whole of what it judges. Do not paste the packet into the prompt
+and do not assemble one by hand. The script carries every part a lens needs, and
+a part lost on the way is a check the critic cannot run. `.work/` holds working
+state and ignores itself in version control; leave it where it is.
 
-A hand-rolled `sed` range is how a lens came to declare a blind spot it should
-never have had: `## Out of scope` arrived as a heading with no content, and
-scope compliance could not be checked against a boundary that never got there.
-The script prints `_the spec states no scope boundary_` instead — an empty
-section that says it is empty is checkable; a silently truncated one is not.
-
-**Not the whole draft.** Passing prose sections doubles this phase's cost. If a
-lens seems to need one, the packet is wrong.
-
-In `--deep`, dispatch three agents in parallel, one per lens, and route the
-principles lens to `model: opus`. **Give each its own packet** —
-`--lens completeness`, `--lens consistency`, `--lens principles` — which carries
-only that lens's rubric and assigns it a distinct finding-id prefix (`BC`/`AC`,
-`BS`/`AS`, `BP`/`AP`). Three agents all numbering their findings `B1` cannot be
-reconciled per finding in the second pass, which is the whole point of the ids.
-
-Save each pass verbatim and validate it — the anti-rubber-stamp rule and the
-`QUOTE:`/`FIX:` discipline are checkable, not matters of impression:
-`bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <pass1.txt> --single`
-
-Blocking findings → fix, re-run **once**. Then reconcile the two passes with the
-script, which asserts every pass-1 id is accounted for:
-`bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <pass1.txt> <pass2.txt>`
-
-A finding that vanishes between passes otherwise ships as resolved. **Then write
-regardless** (R12).
-
-Write `spec.md`, the final `tree.md`, and `critique.md` with any unresolved IDs.
-
-## Phase 7 — REPORT
-
-Flip every ADR this run proposed to `Status: Accepted` — the spec now exists.
-
-Generate the two derived artifacts. Both read the spec and the record, so neither
-can drift from what it summarises, and neither costs an interview token:
+Save the critic's reply verbatim as `<specdir>/critique.md`, then validate it:
 
 ```
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-traceability.sh <specdir>/spec.md --tree <specdir>/tree.md
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <specdir>/critique.md --single --packet <specdir>/.work/critic-packet.md
 ```
 
-`traceability.md` joins every requirement to the question, answer, reasoning and
-round behind it — and lists any answer the user gave that no requirement cites,
-which is worth reading before you report. **It exits non-zero on an untraceable
-requirement**, so it is a check as well as an artifact.
+The script checks the reply's shape, that a clean verdict names what it
+checked, and that every quote is text the packet contains. When it fails, send
+its findings to the same critic once with `SendMessage` and save the corrected
+reply over the first. If it fails again, carry on: a finding whose quote is not
+in the packet is not acted on, and the report says so.
 
-If the user wants a one-page summary for an issue, write it inline. A script for
-that would establish no property the spec does not already carry, and every
-script is one more thing to remember.
+**Blocking findings:** fix them in the draft, re-run `check-spec.sh`, then run
+the critic once more on a packet that carries the first pass:
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-packet.sh <specdir>/spec.draft.md --tree <specdir>/tree.md --pass1 <specdir>/critique.md --out <specdir>/.work/critic-packet.md
+```
+
+Save that reply as `<specdir>/critique.pass2.md` and reconcile the two:
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <specdir>/critique.md <specdir>/critique.pass2.md --packet <specdir>/.work/critic-packet.md
+```
+
+It asserts the second pass says what became of every blocking finding the first
+raised, and prints the ids that are still open. Then go on, whatever the verdict
+(R12). The two files are the critique: what is unresolved stays in them and goes
+in the report.
+
+Advisory findings are yours to weigh. Apply one when it corrects the draft
+against the record. Leave one that asks for something the record does not hold:
+that is a question for the user, not an edit. The report lists the ones left.
+
+A critic that returns nothing, or nothing in the shape after one retry, does not
+stop the run. Publish without a critique and say so.
+
+## Phase 7 — PUBLISH AND REPORT
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/publish-spec.sh <specdir>
+```
+
+It runs the full check on the draft one last time, renames the draft to
+`spec.md` and writes `traceability.md`: every requirement joined to the
+decision, reasoning and round behind it, and any decision no line of the spec
+cites.
+
+- On an amendment it compares against the existing `spec.md` and prints what
+  changed before replacing it. Pass `--allow-reword` on the same condition as in
+  Phase 5.
+- After a restart the user chose, pass `--fresh`, so the old spec is replaced
+  without being compared.
+- When it refuses, fix what it names in the draft and run it again. After three
+  attempts stop: leave the draft where it is and report the findings as printed.
+
+Then set every ADR this run proposed to `Status: Accepted`.
 
 Report: paths · the coverage table with deferral counts · deferred items ·
-ADRs written · glossary terms · critic verdict and confidence.
+phases that did not run, with the reason · ADRs written · glossary terms · the
+critic's verdict and confidence, with the blocking ids that ship unresolved and
+the advisory ones left unapplied · decisions the publish output lists as cited
+nowhere.
 
-If the project keeps a `memory-bank/`, say in one line that this spec is ready to
-document once the feature ships, and name `/update-memory-bank`. A suggestion,
-never a call — the same stance taken with `/multi-agent-debate`.
+Counted cost (R6, R11): clarifying rounds, from `Round` in the record, and
+critic passes, from the critique files.
+
+When more than a third of categories ended `Clear*`, or any ended Missing, say
+so plainly: *"most of this spec is open questions — fuller input would close
+them, or a narrower feature."*
+
+If the user wants a one-page summary for an issue, write it inline from the
+spec.
+
+If the project keeps a `memory-bank/`, say in one line that this spec is ready
+to document once the feature ships, and name `/update-memory-bank`. A suggestion,
+never a call.
 
 Say in one line that `/feature-spec-plan <slug>` turns this spec into an
-implementation plan. **A suggestion, never a call, and never mentioned before
-this point.** The interview must not know a plan follows it: a spec written as a
-gate on the way to code gets optimised to be passed rather than to be good, which
-is the failure this whole plugin is built around. Phase 7 is after every question
-has been asked, so naming it here costs nothing.
-
-**Counted cost, never estimated** (R6, R11): rounds used of cap · questions
-asked · fact-finder dispatches · reference files loaded · critic passes.
-
-When more than a third of categories ended `Clear*`, say so plainly: *"most of
-this spec is open questions — consider another round, or a narrower feature."*
+implementation plan, giving the slug without its date. A suggestion, never a call, and never mentioned before this
+point: a spec written as a step toward a plan gets written to be passed rather
+than to be right.

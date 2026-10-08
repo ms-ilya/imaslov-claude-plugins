@@ -39,7 +39,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 PYTHONPATH="$HERE/lib" python3 - "$SPEC" "$TREE" "$OUT" <<'PY'
 import sys
-from record import Record, Spec, tag_sources, resolve_tag
+from record import Record, Spec, tag_sources, resolve_tag, WITHDRAWN, FACT_VERDICT
 
 spec = Spec.load(sys.argv[1])
 rec = Record.load(sys.argv[2])
@@ -70,7 +70,9 @@ def describe(src):
                 f"r{q['round']}" if q['round'] is not None else "")
     if src.startswith('Grounding fact '):
         n = src.split()[-1]
-        return f"Grounding fact {n}", facts.get(n, ""), "found in the repo, not asked", "r0"
+        v = FACT_VERDICT.search(facts.get(n, ""))
+        how = f"a claim graded {v.group(1).lower()}" if v else "found in the repo, not asked"
+        return f"Grounding fact {n}", facts.get(n, ""), how, "r0"
     if src == 'Strategy (chosen)':
         return ("Strategy", strat['chosen'] or "",
                 f"rejected: {strat['rejected']}" if strat['rejected'] else "", "")
@@ -82,7 +84,10 @@ settled_used = set()
 for ident, text, tagline, lineno in spec.items():
     srcs = tag_sources(tagline)
     if not srcs:
-        untagged.append(ident)
+        # A withdrawn requirement and one marked as undecided are the two
+        # statements the template leaves untagged on purpose.
+        if not (WITHDRAWN.search(text) or 'NEEDS CLARIFICATION' in text):
+            untagged.append(ident)
         continue
     bad = [(src, why) for src in srcs for why in [resolve_tag(src, rec)] if why]
     if bad:
@@ -96,6 +101,20 @@ for ident, text, tagline, lineno in spec.items():
                  " · ".join(p[2] for p in parts if p[2]),
                  " · ".join(dict.fromkeys(p[3] for p in parts if p[3]))))
 
+# A decision can reach the spec without becoming a requirement: a scope
+# boundary is an out-of-scope line, a decision about how is an implementation
+# constraint. Each cites its source, and a cited decision is a traced one.
+item_tag_lines = spec.item_tag_lines()
+elsewhere = []
+for lineno, line in spec.all_tags():
+    if lineno in item_tag_lines:
+        continue
+    qs = [src.replace('Settled ', '') for src in tag_sources(line)
+          if src.startswith('Settled ') and not resolve_tag(src, rec)]
+    if qs:
+        settled_used |= set(qs)
+        elsewhere.append((line.split('←')[0].strip().lstrip('-*+ ').strip(), qs))
+
 def cell(s, n=None):
     s = (s or "").replace("|", "\\|").replace("\n", " ").strip()
     return s[:n] + "…" if n and len(s) > n else s
@@ -106,6 +125,17 @@ for ident, text, origin, answer, reasoning, rnd in rows:
     L.append(f"| `{ident}` | {cell(text,90)} | {cell(origin)} | {cell(answer,90)} | "
              f"{cell(reasoning,90)} | {rnd} |")
 L.append("")
+
+if elsewhere:
+    L.append("## Decisions cited outside the requirements")
+    L.append("")
+    L.append("Scope boundaries and implementation constraints. They are decisions the")
+    L.append("spec records without turning them into requirements.")
+    L.append("")
+    for text, qs in elsewhere:
+        names = ", ".join(f"{q} {settled[q]['title']}".strip() for q in qs)
+        L.append(f"- {cell(text, 90)} ← {names}")
+    L.append("")
 
 deferred = rec.deferred_entries()
 if deferred:
@@ -121,11 +151,12 @@ if deferred:
 
 unused = [e for e in rec.settled() if e['id'] not in settled_used]
 if unused:
-    L.append("## Answered but not traced to any requirement")
+    L.append("## Decided but cited nowhere in the spec")
     L.append("")
-    L.append("An answer the user gave that no requirement cites. Either the spec is")
-    L.append("missing something the interview decided, or the question did not earn")
-    L.append("its slot. Both are worth a look.")
+    L.append("A decision in the record that no line of the spec cites. Either the spec")
+    L.append("is missing something that was decided, or the decision shapes the spec")
+    L.append("without being a statement in it: a priority, or who the feature is for.")
+    L.append("Worth a look either way.")
     L.append("")
     for e in unused:
         L.append(f"- **{e['id']} {e['title']}** → {e['answer']}")
@@ -147,7 +178,7 @@ else:
     with open(out, 'w') as fh:
         fh.write(body + "\n")
     print(f"wrote {out}")
-    print(f"  {len(rows)} traced · {len(deferred)} deferred · {len(unused)} answered-but-unused "
+    print(f"  {len(rows)} traced · {len(deferred)} deferred · {len(unused)} decided-but-uncited "
           f"· {len(untagged)+len(unresolved)} untraceable")
 if untagged or unresolved:
     sys.exit(1)

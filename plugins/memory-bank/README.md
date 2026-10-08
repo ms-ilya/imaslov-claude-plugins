@@ -75,8 +75,8 @@ Every update includes a check against fabrication:
 
 | Tool | Purpose |
 |------|---------|
-| **Glob** | Find project files, verify file paths exist |
-| **Grep** | Discover feature-related files, verify type names |
+| **Glob** | Find project files, verify file paths exist (`find` through Bash where the session has no Glob tool) |
+| **Grep** | Discover feature-related files, verify type names (`grep` through Bash where the session has no Grep tool) |
 | **Read** | Read source code for analysis, read templates, verify behavioral claims |
 | **Write** | Create new documentation files |
 | **Edit** | Update existing documentation files |

@@ -11,40 +11,37 @@ description: >-
   Also use when asked to find bugs, code smells, DRY/YAGNI violations, naming
   issues, retain cycles, or thread safety problems in Swift code. Do NOT trigger
   for non-Swift projects (Python, JS, Rust, etc.).
-allowed-tools: Read, Write, Grep, Glob, Bash, Agent, TodoWrite, AskUserQuestion
+allowed-tools: Read, Write, Grep, Glob, Agent, AskUserQuestion, Bash(gh pr diff *), Bash(gh pr view *)
 ---
 
 # iOS Quick Review — Efficient Multi-Pass Code Review
 
 Perform an efficient, focused multi-pass code review. Every finding references exact symbols, exact files, exact lines — verified by reading the actual code. If you find 47 issues, report all 47 — incomplete reviews create false confidence.
 
-Read AGENTS.md from the project root before starting — cross-check findings against its rules. If AGENTS.md is not found, skip naming enforcement in Phase 4 and compliance checks in Phase 7 that depend on project-specific rules, and note the absence.
+Read AGENTS.md from the project root before starting — cross-check findings against its rules. A project that keeps its rules in CLAUDE.md instead counts the same: wherever this skill says AGENTS.md, use that file. If neither is found, skip naming enforcement in Phase 4 and compliance checks in Phase 7 that depend on project-specific rules, and note the absence.
 
 ## Verification Rules
 
 The most common failure mode in LLM code reviews is fabricating findings — reporting issues in code that wasn't actually read, inventing line numbers, or claiming to have traced call sites without actually searching. These rules exist because a single hallucinated finding destroys trust in the entire review:
 
-- Only report findings for code you have READ with the Read tool. Never report an issue based on inference or memory alone.
+- Only report findings for code you have read in this session. Never report an issue based on inference or memory alone.
 - Before writing each finding, re-read the specific lines being cited to verify the issue still exists and line numbers are correct. Working memory degrades over long reviews — re-reading is cheap, hallucinated findings are expensive.
 - Include the actual code snippet (2-4 lines) from the file in each finding as proof.
 - Never guess line numbers. Read the file, find the exact line, cite it.
-- For call-site tracing (Phase 1), use Grep to find usages and Read each caller. List Grep results as evidence.
+- For call-site tracing (Phase 1), search for usages and read each caller. List the search results as evidence.
 - When uncertain, flag as a question rather than asserting as fact.
 
 ## Tool Strategy
 
-Each tool has a purpose — using the right one saves time and improves accuracy:
-
-- **Glob**: Find files by pattern (`*.swift`, `*Tests.swift`, `*ViewModel.swift`). Use to discover project structure.
-- **Grep**: Find symbol usages, call sites, protocol conformances. Use `files_with_matches` mode for speed when you only need file paths. Use `content` mode with context lines when you need surrounding code.
+- **Searching**: Find symbol usages, call sites, conformances and files by name with whatever search the session has: the Grep and Glob tools where they exist, otherwise `grep` and `find` through Bash (on macOS and Linux the main session has no Grep or Glob tool). Ask for file paths only when that is all you need, and for matching lines with context when you need the surrounding code.
 - **Read**: Read specific files or line ranges to verify findings. Always read before reporting. Use line offsets for large files — don't read 2000 lines when you need 50.
-- **Bash**: Git commands only — `git diff`, `git log`, `git show`, `git status`. Never use for grep/find/cat.
-- **Agent**: Parallelize call-site tracing when there are 10+ changed symbols. Use `subagent_type: "general-purpose"`. Each subagent traces one symbol's usages.
+- **Bash**: Besides searching, only the read-only git and `gh` commands in Phase 0. A review changes nothing in the working tree.
+- **Agent**: Parallelize call-site tracing when there are 10+ changed symbols, and batch analysis on large diffs. Use `subagent_type: "general-purpose"`. A subagent sees only its prompt, so give it everything it needs: the symbols or files, the command that reproduces the diff, the checklist of the phases it covers, the Verification Rules above, and the Output Format below. Re-read the lines a subagent cites before you report its finding as yours; its report is a claim, not evidence.
 - **Write**: For reviews with 20+ findings, write the full report to `code-review-YYYY-MM-DD.md` in the project root, in addition to conversation output.
 
 ## Execution Plan
 
-Use TodoWrite to create a checklist of applicable phases before starting. Mark each phase in_progress when starting and completed when done — this gives the reviewer visible progress.
+Before starting, list the phases that apply, and say which phase you are on as you move through them — this gives the reviewer visible progress.
 
 Output findings after completing each phase — don't batch everything to the end. This prevents losing findings if context fills up, and gives the reviewer incremental value.
 
@@ -69,6 +66,7 @@ Determine what's being reviewed and get the actual diff:
 git status
 git diff HEAD
 ```
+`git diff HEAD` leaves out untracked files. Every untracked source file that `git status` lists is part of the change: read it in full and review all of it as added lines.
 
 **For a specific commit:**
 ```bash
@@ -97,7 +95,7 @@ Before reviewing anything, map the blast radius:
 
 1. From the diff acquired in Phase 0, list every changed file.
 2. For each changed symbol (function, property, type, protocol, enum case):
-   - Use Grep to find ALL call sites, conformances, and overrides across the project.
+   - Search for all call sites, conformances, and overrides across the project.
    - Read each caller to note which might be affected.
 3. List files NOT changed but potentially SHOULD have been (e.g., a function signature changed but a caller wasn't updated).
 
@@ -121,7 +119,12 @@ Potentially affected files not in diff:
   - ProfileHeaderView.swift (references deleted fullName property)
 ```
 
-**Checkpoint:** Present this scope summary, then use AskUserQuestion to confirm before proceeding. Catching a wrong-scope review here saves the entire cost of Phases 2-7. Options: "Looks correct, continue review", "Wrong scope, let me clarify", "Skip to specific phase".
+**Checkpoint:** Present this scope summary and continue. Stop and confirm with AskUserQuestion only when a wrong guess about scope would waste the review:
+- the request does not say what to review and more than one target is plausible (uncommitted changes and also unpushed commits, or several candidate commits);
+- the diff is large (15+ files) or much larger than the request suggests;
+- the diff mixes unrelated changes and the user may have meant only some of them.
+
+Options when asking: "Looks correct, continue review", "Wrong scope, let me clarify", "Skip to specific phase".
 
 ---
 
@@ -135,18 +138,27 @@ This is the highest-priority pass. A bug here = production crash or data corrupt
 - Verify guard/if-let chains handle the failure path correctly.
 
 **Thread safety:**
+- Isolation defaults are a per-target build setting, so read them before judging: default actor isolation (new app targets default to `@MainActor`) and `NonisolatedNonsendingByDefault`, in the target's build settings or `Package.swift`. An app and its packages often differ. A "missing `@MainActor`" in a target that is main-actor by default is a false finding.
 - Mutable state accessed from multiple threads or queues without synchronization?
-- Missing `@MainActor` on UI-touching code?
-- Actor isolation violations?
+- UI-touching code that visibly runs off the main actor?
+- Actor reentrancy: state read before an `await` and relied on after it without re-checking?
+- An isolation error silenced instead of fixed (`DispatchQueue.main.async`, `Task.detached`, `assumeIsolated`, `nonisolated(unsafe)`)?
+- Long loops or computations in a `Task` that never check for cancellation?
 - Race conditions in async/await, Combine pipelines, or GCD?
 - Shared mutable state protected only by assumptions, not by actual synchronization primitives?
 - `DispatchQueue` barriers used correctly?
 
 **Retain cycles:**
-- Every closure capture list — is `[weak self]` needed? Is it missing?
-- Every `sink`/`assign` in Combine — stored in cancellables correctly?
+- Closures that `self` stores or that are long-lived — is `[weak self]` missing? A non-escaping closure or a short one-shot `Task` does not need it; flag blanket `[weak self]` too.
+- Long-lived `Task { [weak self] }` loops — is `self` unwrapped inside the loop? A top-level `guard let self` holds it for the task's whole life.
+- Every `sink`/`assign` in Combine — stored in cancellables correctly? `assign(to:on: self)` retains `self`.
 - Delegate properties — are they `weak`?
-- Timer or notification observer references — cleaned up on deinit?
+- Repeating timers and notification observers — invalidated or removed explicitly, not only in `deinit`?
+
+**SwiftUI & Observation** (when the diff touches views or models):
+- `ForEach` identity taken from an array index or `id: \.self` on mutable data?
+- An `@Observable` type held in `@State` whose initializer does I/O or registers observers? It re-runs on every view rebuild.
+- A view that depends on a value its `body` never reads (used only in a helper, closure or untaken branch), or on a nested reference type that is not itself `@Observable`?
 
 **Optionals:**
 - Force unwraps (`!`) — each one must be justified or flagged.

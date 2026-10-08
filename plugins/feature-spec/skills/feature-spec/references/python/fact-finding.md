@@ -115,8 +115,10 @@ Three specifics that change what a spec can promise:
 
 ## How to ask for these
 
-Give the fact-finder the questions above **verbatim and numbered**, plus the
-scope path. Ask for the nearest instance to the feature, not a survey — "which
+Give the fact-finder the questions above that this feature could turn on,
+numbered, each with what its row says to look for, plus the scope path when
+there is one. A question that cannot bear on the feature is not sent. Ask for
+the nearest instance to the feature, not a survey — "which
 session does `create_order` run inside, and where is it opened" beats "describe
 the database layer", which returns an essay nobody can cite.
 

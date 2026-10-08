@@ -1,39 +1,36 @@
 ---
 name: review-extract
-description: >-
-  Extract PR or branch diff context for iOS/Swift code review. Parses changed
-  files, new symbols, and signature changes into structured JSON.
-  Use when asked to "extract context", "get PR diff", "parse PR changes",
-  "prepare review data", or "extract PR N". This is stage 1 of 4 in the
-  comprehensive review pipeline. For a single-command full review, use
-  review-all instead.
+description: Stage 1 of 4 — extract a PR or branch diff (changed files, new symbols, signature changes) into .ios-review-temp/pr-context.json, discarding any earlier review data. review-all runs every stage.
 argument-hint: <PR number> or --base <branch> [--branch <branch>]
 disable-model-invocation: true
-allowed-tools: Bash
+allowed-tools:
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/extract-pr-context.sh *)
+  - Bash(rm -rf .ios-review-temp)
 ---
 
 ## EXECUTION
 
-1. **Check dependencies:**
-   ```bash
-   command -v jq >/dev/null 2>&1 || { echo "ERROR: jq not installed (brew install jq)"; exit 1; }
-   ```
-
-2. **Clear and extract:**
-   ```bash
-   rm -rf .ios-review-temp && ${CLAUDE_SKILL_DIR}/../../scripts/extract-pr-context.sh $ARGUMENTS
-   ```
-
-   If no arguments provided, show usage:
+1. **Check arguments:** If no arguments were provided, show usage and stop:
    ```
    Usage: /ios-comprehensive-review:review-extract <PR number>
           /ios-comprehensive-review:review-extract --base <branch> [--branch <branch>]
    ```
 
-3. **Verify:**
+2. **Check dependencies:**
    ```bash
-   test -f .ios-review-temp/pr-context.json && echo "OK" || echo "FAILED: Context file not created"
+   which jq
    ```
+   If jq is missing: report "jq not installed (brew install jq)" and stop.
+
+3. **Clear and extract:**
+   ```bash
+   rm -rf .ios-review-temp
+   ```
+   ```bash
+   bash ${CLAUDE_PLUGIN_ROOT}/scripts/extract-pr-context.sh $ARGUMENTS
+   ```
+
+   If the script exits non-zero or `.ios-review-temp/pr-context.json` was not created: report the script's error and stop.
 
 4. **Report:** Script outputs `Files: X | Symbols: Y | Signatures: Z`
 

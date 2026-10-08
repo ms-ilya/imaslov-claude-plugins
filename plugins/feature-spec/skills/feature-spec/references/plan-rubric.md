@@ -43,11 +43,15 @@ The lens that justifies this document existing. A plan's characteristic failure
 is not being wrong — it is being confident about things nobody decided.
 
 - **Is every implementation choice in `## Plan assumptions`?** Read the action
-  items and find the decisions: a type, a library, a file layout, a data shape.
+  items and find the decisions before you read the assumptions section, so what
+  it claims does not prime you: a type, a library, a file layout, a data shape.
   Each one the spec did not settle must appear as an assumption with its
   reversal cost (R21). **An assumptions section that is empty while the action
   items name technologies is the single most likely blocking finding in this
   pass.**
+- **Does the plan follow every implementation constraint the spec fixes?** The
+  packet lists them. The user settled those before the plan, so they are not
+  assumptions, and an action item that contradicts one is blocking.
 - **Does any action item silently answer an open question?** A
   `[NEEDS CLARIFICATION]` the spec carries cannot be resolved by an action item
   choosing one branch (R20). Blocking.
@@ -73,10 +77,18 @@ parallelism, a task that could split, a thin `## Why now`.
 
 If you cannot say which one a finding is, it is advisory.
 
+**A deliberate gap is not a defect.** A requirement under `## Not planned` with
+a reason, a task covering nothing that is listed under `## Enabling work`, and
+an assumption with its reversal cost are recorded decisions. Flagging one as an
+omission is a misread of the packet. The finding is about the missing half — the
+reason, the label, the cost — never the thing itself.
+
 ## Discipline
 
-- **Quote verbatim, always.** Every finding carries the exact text it is about.
-  A paraphrase is a finding nobody can check.
+- **Quote verbatim, always.** Every finding carries the exact text it is about,
+  copied from the packet. A paraphrase is a finding nobody can check. A script
+  compares each quote with the packet and discards a finding whose quote is not
+  there.
 - **Commit to a verdict.** `ship` or `fix-first`, with calibrated confidence.
 - **Declare your blind spot.** Say what this pass could not assess.
 - **No empty diplomacy.** No preamble, no softening a blocking finding.
@@ -101,11 +113,15 @@ Exactly this shape, nothing before or after it:
 ```
 VERDICT: ship | fix-first
 CONFIDENCE: high | moderate | low — <one sentence saying why>
-BLIND SPOT: <what this pass could not assess>
+BLIND SPOT: <what this pass could not assess, or none>
+
+RECONCILIATION
+- B1 fixed
+- B2 not fixed — <why>
 
 BLOCKING
 - B1 [coverage] T02 — <finding>
-  QUOTE: "<verbatim from the plan>"
+  QUOTE: "<verbatim from the packet>"
   WHY: <one sentence>
   FIX: <the smallest edit that would clear this>
 
@@ -113,14 +129,26 @@ ADVISORY
 - A1 [sequencing] T03 — <finding> — QUOTE: "..."
 
 COULD NOT VERIFY
-- <claim needing a human or a running build to confirm>
+- <a check the packet gave you no input for, or a claim needing a running build>
 
 CHECKED AND SOUND
-- <required when BLOCKING is empty>
+- <required when BLOCKING is empty: what you checked, quoting it or naming its identifier>
 ```
 
-Omit a section only when it is genuinely empty — except `CHECKED AND SOUND`,
-which is **required** whenever `BLOCKING` is empty.
+Leave out a section that has nothing in it. Two exceptions:
+
+- `CHECKED AND SOUND` is **required** whenever `BLOCKING` is empty. Each item
+  quotes the text it checked or names the task or requirement it is about. Two
+  items at least.
+- `RECONCILIATION` appears only on a second pass, when the packet carries the
+  first pass's findings. One line per id listed there, the disposition directly
+  after the id: `fixed` or `not fixed`. A finding that is not fixed keeps the
+  verdict at `fix-first`.
+
+The verdict follows from the findings: `fix-first` when anything is blocking or
+still not fixed, `ship` otherwise.
+
+An id is never reused, under the other heading or on the second pass.
 
 ## Confidence, calibrated
 

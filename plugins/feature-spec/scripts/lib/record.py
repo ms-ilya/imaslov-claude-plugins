@@ -16,16 +16,77 @@ def is_external_path(p):
     return p.startswith('~') or os.path.isabs(p)
 
 
+def search_roots(root):
+    """`root` and every ancestor of it, nearest first.
+
+    Paths in a record are written from the repository root, but a record can sit
+    in a nested checkout or be checked from a hook whose cwd is unrelated. A real
+    file resolves against one of these; an invented one resolves against none."""
+    out, cur = [], os.path.abspath(root)
+    while True:
+        out.append(cur)
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return out
+        cur = parent
+
+
+def resolve_path(p, roots):
+    """The existing file `p` names, or None."""
+    if is_external_path(p):
+        full = os.path.expanduser(p)
+        return full if os.path.exists(full) else None
+    for r in roots:
+        cand = os.path.join(r, p)
+        if os.path.exists(cand):
+            return cand
+    return None
+
+
+def wording_overlap(text, source):
+    """Share of `text` that is `source`'s own wording, 0.0 to 1.0, or None
+    when `text` is too short to judge.
+
+    A word counts when it sits inside a run of consecutive words the source
+    also has, so a sentence copied and trimmed scores high, a few words added
+    to a copied phrase cost only those words, and a paraphrase scores near zero
+    whatever vocabulary it shares."""
+    words = re.findall(r'[0-9a-z]+', text.casefold())
+    if len(words) < 4:
+        return None
+    n = 4 if len(words) >= 8 else 3
+    have = re.findall(r'[0-9a-z]+', source.casefold())
+    runs = {tuple(have[i:i + n]) for i in range(len(have) - n + 1)}
+    covered = set()
+    for i in range(len(words) - n + 1):
+        if tuple(words[i:i + n]) in runs:
+            covered.update(range(i, i + n))
+    return len(covered) / len(words)
+
+
+# A citation is a backticked `path:line`, optionally a range. The last path
+# segment has to carry an extension: `ghcr.io/acme/api:3` and `localhost:8080`
+# have the same shape and are not files.
+CITATION = re.compile(r'`([^`\s:]*[^`\s:/]\.\w+):(\d+)(?:[-–]\d+)?`')
+# `:349` after a full citation points into the same file.
+CITATION_SHORT = re.compile(r'`:(\d+)(?:[-–]\d+)?`')
+FACT_SUFFIX = re.compile(r'\(([^()]+),\s*r(\d+),\s*(high|medium|low)\)\s*$')
+FACT_VERDICT = re.compile(r'(?:—|–|-)\s*(contradicted|unverifiable)\b', re.I)
+
+
 # --------------------------------------------------------------------- record
 
 
 class Record:
     """A parsed `tree.md`. Every accessor returns something empty rather than
     raising, because a partially written record is the normal mid-interview
-    state — `parses()` is what says whether the file is usable at all."""
+    state."""
 
     REQUIRED = ['Problem', 'Protocol', 'Reads', 'Coverage', 'Principles in force',
                 'Grounding facts', 'Settled', 'Frontier', 'Blocked', 'Deferred', 'Sessions']
+
+    SETTLED_ENTRY = re.compile(r'^-\s+\*\*(Q\d+)([^*]*)\*\*\s*(?:→|->)\s*(.*)$')
+    DEFERRED_ENTRY = re.compile(r'^-\s+\*\*(Q\d+)([^*]*)\*\*\s*(?:—|–|-)?\s*(.*)$')
 
     def __init__(self, text, path=None):
         self.text = text
@@ -44,62 +105,101 @@ class Record:
     def missing_sections(self):
         return [s for s in self.REQUIRED if self.section(s) is None]
 
-    def parses(self):
-        return not self.missing_sections() and bool(self.problem())
-
     # -- content ---------------------------------------------------------
     def problem(self):
         body = self.section('Problem') or ''
         return ' '.join(l.strip() for l in body.splitlines() if l.strip())
 
     def settled(self):
-        """[(qid, answer, why, round, priority)] in record order."""
+        """[{id, title, answer, why, round, priority}] in record order.
+
+        An answer may run over indented lines before its `*Why:*`; they are part
+        of it. A struck-through entry is superseded: it and the lines under it
+        are skipped, so its rationale cannot leak into the entry above."""
         out = []
-        body = self.section('Settled') or ''
         cur = None
-        for line in body.splitlines():
-            m = re.match(r'^\s*-\s+\*\*(Q\d+)([^*]*)\*\*\s*(?:→|->)\s*(.*)$', line)
-            if m:
-                if cur:
-                    out.append(cur)
-                title = m.group(2).strip()
+        for line in (self.section('Settled') or '').splitlines():
+            if not line.strip():
+                continue
+            if re.match(r'^-\s', line):
+                m = self.SETTLED_ENTRY.match(line)
+                if not m:
+                    cur = None
+                    continue
                 answer = m.group(3).strip()
                 pri = re.search(r'\[(P[123])\]', answer)
-                cur = {'id': m.group(1), 'title': title,
-                       'answer': re.sub(r'\s*\[P[123]\]\s*', ' ', answer).strip(),
-                       'why': '', 'round': None,
+                cur = {'id': m.group(1), 'title': m.group(2).strip(),
+                       'answer': answer, 'why': None, 'round': None,
                        'priority': pri.group(1) if pri else None}
+                out.append(cur)
                 continue
-            if cur is None:
+            if cur is None or line.strip().startswith('~~'):
                 continue
             w = re.match(r'^\s*\*Why:\*\s*(.*)$', line)
             if w:
                 cur['why'] = w.group(1).strip()
-            r = re.search(r'\(r(\d+)\)', line)
-            if r and cur['round'] is None:
-                cur['round'] = int(r.group(1))
-            if cur['why'] and not w and line.strip() and not line.strip().startswith('-'):
+            elif cur['why'] is None:
+                cur['answer'] = (cur['answer'] + ' ' + line.strip()).strip()
+            else:
                 cur['why'] = (cur['why'] + ' ' + line.strip()).strip()
-        if cur:
-            out.append(cur)
         for e in out:
-            e['why'] = re.sub(r'\s*\(r\d+\)\s*$', '', e['why']).strip()
+            r = re.search(r'\(r(\d+)\)', (e['why'] or '') + ' ' + e['answer'])
+            e['round'] = int(r.group(1)) if r else None
+            e['why'] = re.sub(r'\s*\(r\d+\)\s*$', '', e['why'] or '').strip()
+            e['answer'] = re.sub(r'\s*\(r\d+\)\s*$', '', e['answer'])
+            e['answer'] = re.sub(r'\s*\[P[123]\]\s*', ' ', e['answer']).strip()
         return out
 
     def settled_ids(self):
         return {e['id'] for e in self.settled()}
 
+    def unparsed_entries(self, name):
+        """Live top-level bullets under `## Settled` or `## Deferred` that the
+        entry parser cannot read.
+
+        Such a line looks like an entry to a person and is invisible to every
+        tool: the decision it holds resolves no tag and reaches no packet."""
+        rx = self.SETTLED_ENTRY if name == 'Settled' else self.DEFERRED_ENTRY
+        return [l.strip() for l in (self.section(name) or '').splitlines()
+                if re.match(r'^-\s', l) and not rx.match(l)
+                and not l.lstrip('- ').startswith('~~')]
+
+    def grounding_fact_list(self):
+        """[(n, text)] for every top-level numbered item, in order, duplicates
+        kept. Indented lines under an item belong to it."""
+        out = []
+        for line in (self.section('Grounding facts') or '').splitlines():
+            m = re.match(r'^(\d+)\.\s+(.*)$', line)
+            if m:
+                out.append([m.group(1), m.group(2).strip()])
+            elif out and line.strip() and line[:1] in (' ', '\t'):
+                out[-1][1] += ' ' + line.strip()
+        return [(n, t) for n, t in out]
+
     def grounding_facts(self):
-        """{n: text}"""
+        """{n: text}. A number used twice keeps the first; `check-tree.sh`
+        fails the record for the second."""
         out = {}
-        for m in re.finditer(r'^\s*(\d+)\.\s+(.*)$',
-                             self.section('Grounding facts') or '', re.M):
-            out[m.group(1)] = m.group(2).strip()
+        for n, text in self.grounding_fact_list():
+            out.setdefault(n, text)
         return out
 
     def adr_ids(self):
-        return set(re.findall(r'\b(ADR-[\w.-]+)',
-                              (self.section('Promoted to ADR') or '') + (self.section('Reads') or '')))
+        """`ADR-<id>` for every ADR file `## Reads` names.
+
+        The id is the file's leading number, or its whole stem when the file
+        is not numbered. An ADR listed under `## Promoted to ADR` with no file
+        behind it is a title, and a title is not a source."""
+        out = set()
+        for p in self.reads():
+            stem = os.path.splitext(os.path.basename(p))[0]
+            if not re.search(r'(^|/)(adrs?|decisions?)/', p.lower()) \
+                    and not stem.lower().startswith('adr-'):
+                continue
+            stem = re.sub(r'^adr-', '', stem, flags=re.I)
+            num = re.match(r'(\d+)-(?!\d)', stem)
+            out.add(f"ADR-{num.group(1)}" if num else f"ADR-{stem}")
+        return out
 
     def reads(self):
         out = []
@@ -129,15 +229,20 @@ class Record:
         in an absolute path is exactly as fatal at drafting time as a typo in a
         relative one."""
         roots = [root, *extra_roots]
-        out = []
-        for p in self.reads():
-            if is_external_path(p):
-                if not os.path.exists(os.path.expanduser(p)):
-                    out.append(p)
-                continue
-            if not any(os.path.exists(os.path.join(r, p)) for r in roots) \
-                    and not os.path.exists(p):
-                out.append(p)
+        return [p for p in self.reads() if resolve_path(p, roots) is None]
+
+    def fact_citations(self, text):
+        """[(path, line)] for every `path:line` a grounding fact cites. A bare
+        `:349` takes the path of the citation before it."""
+        out, last = [], None
+        for m in re.finditer(r'`[^`]*`', text):
+            full = CITATION.fullmatch(m.group(0))
+            short = CITATION_SHORT.fullmatch(m.group(0))
+            if full and not full.group(1).startswith('//'):
+                last = full.group(1)
+                out.append((last, int(full.group(2))))
+            elif short and last:
+                out.append((last, int(short.group(1))))
         return out
 
     def coverage(self):
@@ -149,13 +254,10 @@ class Record:
                 re.findall(r'^\|\s*([^|]+?)\s*\|\s*([^|]+?)\s*\|', cov, re.M)]
         return [(c, s) for c, s in rows if c != 'Category' and set(c) - set('- ')]
 
-    def deferred(self):
-        return re.findall(r'\*\*(Q\d+)', self.section('Deferred') or '')
-
     def deferred_entries(self):
         out = []
         for line in (self.section('Deferred') or '').splitlines():
-            m = re.match(r'^\s*-\s+\*\*(Q\d+)([^*]*)\*\*\s*(?:—|-)?\s*(.*)$', line)
+            m = self.DEFERRED_ENTRY.match(line)
             if m:
                 out.append({'id': m.group(1), 'title': m.group(2).strip(),
                             'reason': m.group(3).strip()})
@@ -188,27 +290,11 @@ class Record:
         return {'chosen': joined(chosen), 'rejected': joined(rejected),
                 'chosen_axes': chosen, 'rejected_axes': rejected}
 
-    def question_ids(self):
-        return set(re.findall(r'\*\*(Q\d+)', self.text))
-
     # -- protocol --------------------------------------------------------
-    COUNTERS = ('questions', 'fact-finders', 'references', 'orchestrator reads',
-                'lines read', 'critic passes')
-
-    # The round cap per mode. It lives here so bump-protocol.sh cannot write a
-    # record check-tree.sh rejects.
-    ROUND_CAP = {'fast': 1, 'default': 4, 'deep': 5}
-
-    # What each mode's own configuration spends before the interview asks
-    # anything. A guard whose thresholds sit below these scores the mode, not
-    # the pressure: `--deep` mandates four fact-finders, so a fixed `>= 3` trips
-    # on a repo with a stack layer before question one and hands `--deep` a
-    # single round. Thresholds are derived from the budget, never from a
-    # constant that has to be remembered when the budget changes.
-    FACT_FINDER_ALLOWANCE = {'fast': 1, 'default': 2, 'deep': 4}
-    REFERENCE_BUDGET = {'fast': 7, 'default': 10, 'deep': 10}
-
     def protocol(self):
+        """The fields that re-anchor a run. A record may also carry Mode,
+        Counters and Guard lines; they are not read, so such a record still
+        resumes."""
         p = self.section('Protocol') or ''
 
         def n(pat, cast=int):
@@ -222,44 +308,10 @@ class Record:
         return {
             'raw': p,
             'slug': n(r'Slug:\s*(\S+)', str),
-            'mode': (n(r'Mode:\s*(\S+)', str) or '').lower() or None,
             'round': n(r'Round:\s*(\d+)'),
             'cap': n(r'Round:\s*\d+\s*of\s*(\d+)'),
             'next_phase': n(r'Next phase:\s*(\d+)'),
-            'questions': n(r'questions\s+(\d+)'),
-            'fact-finders': n(r'fact-finders\s+(\d+)'),
-            'references': n(r'references\s+(\d+)'),
-            'orchestrator reads': n(r'orchestrator reads\s+(\d+)'),
-            'lines read': n(r'lines read\s+(\d+)'),
-            'critic passes': n(r'critic passes\s+(\d+)'),
-            'largest_read': n(r'Largest single read:\s*(\d+)'),
-            'guard_tripped': bool(re.search(r'Guard:\s*tripped', p, re.I)),
         }
-
-    # Context pressure is lines, not calls. Nine `Read` calls tripped the old
-    # `orchestrator reads >= 8` on a run whose largest single read was 127
-    # lines — most of them 20-40 line slices — while the counter that did track
-    # size was never consulted. One counter now carries both.
-    LINES_READ_THRESHOLD = 1200
-
-    def thresholds(self, mode=None):
-        """[(label, protocol key, threshold)] for this record's mode."""
-        mode = (mode or self.protocol()['mode'] or 'default').lower()
-        # +2, not +1: one follow-up dispatch and one degradation reference are
-        # normal, and a guard that trips on the expected case is noise.
-        return [('references loaded', 'references',
-                 self.REFERENCE_BUDGET.get(mode, 10) + 2),
-                ('fact-finder dispatches', 'fact-finders',
-                 self.FACT_FINDER_ALLOWANCE.get(mode, 2) + 2),
-                ('lines read', 'lines read', self.LINES_READ_THRESHOLD),
-                ('rounds completed', 'round', 4),
-                ('questions asked', 'questions', 22)]
-
-    def guard_over(self):
-        p = self.protocol()
-        return [f"{label} {p[key]}≥{t}"
-                for label, key, t in self.thresholds()
-                if p.get(key) is not None and p[key] >= t]
 
 
 # ----------------------------------------------------------------------- spec
@@ -269,11 +321,20 @@ class Record:
 # acceptance scenario into a duplicate definition.
 DEF_HEADS = ('requirements', 'functional requirements', 'success criteria')
 SCEN_HEADS = ('acceptance scenarios', 'acceptance criteria')
+SCOPE_HEADS = ('out of scope', 'non goals', 'nongoals')
+CONSTRAINT_HEADS = ('implementation constraints',)
+# The sections spec-template.md defines. A statement under any other heading is
+# read by no checker and reaches no critic, so the heading itself is the finding.
+KNOWN_HEADS = (('user stories',), ('requirements', 'functional requirements'),
+               ('success criteria',), SCEN_HEADS, SCOPE_HEADS, CONSTRAINT_HEADS,
+               ('chosen approach',), ('principle deviations',), ('clarifications',),
+               ('open questions',))
 
 ROUND_SUFFIX = re.compile(r'\s*\(r\d+\)\s*$')
 # Tolerant of the markdown decoration a drafter reaches for by reflex.
-DEF_LINE = re.compile(r'^\s*(?:[-*+]\s+)?\*{0,2}((?:FR|SC)-\d+[a-z]?)\*{0,2}\s*[:—–-]?\s+(\S.*)$')
-MENTION = re.compile(r'(?:FR|SC)-\d')
+DEF_LINE = re.compile(r'^\s*(?:[-*+]\s+)?\*{0,2}((?:FR|SC)-\d+[a-z]?)\*{0,2}\s*[:—–-]?\*{0,2}\s+(\S.*)$')
+SCEN_LINE = re.compile(r'^\s*(?:[-*+]\s+|#{3,}\s+)?\*{0,2}(FR-\d+[a-z]?)\b')
+WITHDRAWN = re.compile(r'\(withdrawn\b', re.I)
 
 
 def _norm(h):
@@ -288,6 +349,7 @@ class Spec:
         self.path = path
         self.lines = text.splitlines()
         self.sections = self._sections()
+        self._defs = None
 
     @classmethod
     def load(cls, path):
@@ -310,33 +372,100 @@ class Spec:
     def spans(self, names):
         return [(a, b) for h, a, b in self.sections if h in names]
 
+    def _definitions(self):
+        """Classify every line of the requirement sections.
+
+        An item is its definition line, the indented lines under it, and the
+        `←` line that closes it. Anything else in these sections is a statement
+        with no identifier, which no tag covers and no critic is shown."""
+        if self._defs is not None:
+            return self._defs
+        items, tag_lines, strays = [], set(), []
+        for a, b in self.spans(DEF_HEADS):
+            cur = None
+            for i in range(a, b + 1):
+                line = self.lines[i]
+                if not line.strip():
+                    cur = None
+                    continue
+                m = DEF_LINE.match(line)
+                if m:
+                    cur = {'id': m.group(1), 'text': m.group(2).split('←')[0].strip(),
+                           'tag': line if '←' in line else None, 'line': i + 1}
+                    if cur['tag']:
+                        tag_lines.add(i + 1)
+                    items.append(cur)
+                    continue
+                if cur is not None and line.lstrip().startswith('←'):
+                    cur['tag'] = line if cur['tag'] is None \
+                        else cur['tag'] + ', ' + line.split('←', 1)[1]
+                    tag_lines.add(i + 1)
+                    continue
+                if cur is not None and cur['tag'] is None and line[:1] in (' ', '\t'):
+                    cur['text'] += ' ' + line.strip()
+                    continue
+                if re.match(r'^#{3,}\s', line) or _placeholder(line) \
+                        or re.fullmatch(r'\s*[-*_]{3,}\s*', line):
+                    cur = None
+                    continue
+                strays.append((i + 1, line.strip()[:70]))
+        self._defs = (items, tag_lines, strays)
+        return self._defs
+
     def items(self):
         """[(id, text, tagline|None, lineno)] for every FR/SC definition."""
-        out = []
-        for a, b in self.spans(DEF_HEADS):
-            for i in range(a, b + 1):
-                m = DEF_LINE.match(self.lines[i])
-                if not m:
-                    continue
-                tag = self.lines[i] if '←' in self.lines[i] else None
-                if tag is None:
-                    for j in range(i + 1, min(i + 4, len(self.lines))):
-                        if '←' in self.lines[j]:
-                            tag = self.lines[j]
-                            break
-                        if DEF_LINE.match(self.lines[j]):
-                            break
-                out.append((m.group(1), m.group(2), tag, i + 1))
-        return out
+        return [(d['id'], d['text'], d['tag'], d['line']) for d in self._definitions()[0]]
 
-    def unparsed_identifiers(self):
-        claimed = {n - 1 for _, _, _, n in self.items()}
-        return [(i + 1, self.lines[i].strip()[:60])
-                for a, b in self.spans(DEF_HEADS) for i in range(a, b + 1)
-                if i not in claimed and MENTION.search(self.lines[i]) and '←' not in self.lines[i]]
+    def item_tag_lines(self):
+        """Line numbers of the `←` lines that belong to an FR/SC definition."""
+        return self._definitions()[1]
+
+    def stray_lines(self):
+        """[(lineno, text)] for lines in the requirement sections that belong to
+        no identifier."""
+        return self._definitions()[2]
+
+    def unknown_sections(self):
+        """[(heading as written, lineno)] for `## ` headings the template does
+        not define."""
+        known = {h for group in KNOWN_HEADS for h in group}
+        return [(self.lines[a - 1].strip(), a) for h, a, _b in self.sections if h not in known]
+
+    def repeated_sections(self):
+        """Names of template sections the spec carries more than once, counting
+        an alias as the same section."""
+        have = [h for h, _a, _b in self.sections]
+        return [group[0] for group in KNOWN_HEADS if sum(have.count(h) for h in group) > 1]
+
+    def bullets(self, names):
+        """[(lineno, text)] for each bullet of the first section in `names`,
+        continuation lines joined, placeholders dropped."""
+        out = []
+        for a, b in self.spans(names)[:1]:
+            for i in range(a, b + 1):
+                line = self.lines[i]
+                if not line.strip():
+                    continue
+                if re.match(r'^\s*[-*+]\s+', line):
+                    if not _placeholder(line):
+                        out.append([i + 1, re.sub(r'^\s*[-*+]\s+', '', line).rstrip()])
+                elif out and line[:1] in (' ', '\t'):
+                    out[-1][1] += ' ' + line.strip()
+        return [(n, t) for n, t in out]
 
     def scenarios_body(self):
         return '\n'.join('\n'.join(self.lines[a:b + 1]) for a, b in self.spans(SCEN_HEADS))
+
+    def scenario_ids(self):
+        """[(id, lineno)] for each scenario, keyed by the requirement that opens
+        its line. A requirement merely mentioned in a sentence is not covered."""
+        return [(m.group(1), i + 1) for a, b in self.spans(SCEN_HEADS)
+                for i in range(a, b + 1) for m in [SCEN_LINE.match(self.lines[i])] if m]
+
+    def intro(self):
+        """The paragraph between the title and the first section."""
+        end = self.sections[0][1] - 1 if self.sections else len(self.lines)
+        return '\n'.join(l for l in self.lines[:end] if l.strip() and not l.startswith('# ')).strip()
 
     def stories(self):
         out = []
@@ -347,6 +476,22 @@ class Spec:
 
     def open_markers(self):
         return re.findall(r'\[NEEDS CLARIFICATION:\s*(.*?)\]', self.text, re.S)
+
+    def section_text(self, *names):
+        """Body of the first section whose heading matches one of `names`
+        (lower-case, punctuation stripped), or None when the spec has none."""
+        for h, a, b in self.sections:
+            if h in names:
+                return '\n'.join(self.lines[a:b + 1])
+        return None
+
+    def all_tags(self):
+        """[(lineno, line)] for every line carrying a `←` source tag.
+
+        Requirements are not the only statements that cite the record: an
+        out-of-scope line and an implementation constraint each come from a
+        decision too, and a citation is a citation wherever it sits."""
+        return [(i + 1, l) for i, l in enumerate(self.lines) if '←' in l]
 
 
 def _canonical_source(seg, kind):
@@ -372,8 +517,6 @@ def _canonical_source(seg, kind):
     if m:
         return f'Principle: {m.group(1)}', None
     if re.fullmatch(r'ADR-\S+', seg):
-        return seg, None
-    if re.fullmatch(r'[\w./~-]+\.md', seg):
         return seg, None
     if kind == 'fact' and re.fullmatch(r'\d+', seg):
         return f'Grounding fact {seg}', 'fact'
@@ -423,21 +566,21 @@ def resolve_tag(src, record):
     if p:
         name = p.group(1).rstrip(':')
         files = record.read_files()
-        return None if any(name in rf or rf in name for rf in files) \
+        return None if any(rf == name or rf.endswith('/' + name) or name.endswith('/' + rf)
+                           for rf in files) \
             else f"{name} is not in ## Principles in force or ## Reads"
     a = re.match(r'(ADR-\S+)$', src)
     if a:
         return None if a.group(1) in record.adr_ids() \
-            else f"{a.group(1)} is not in ## Promoted to ADR or ## Reads"
-    if src.endswith('.md'):
-        return None if src in record.read_files() \
-            else f"{src} is not in {where}'s ## Reads"
+            else f"## Reads names no ADR file with the id {a.group(1)[4:]}"
+    if re.fullmatch(r'[\w./~-]+\.\w+', src):
+        return (f"{src} is a file, and a file is not a source — cite the Settled "
+                f"entry or the grounding fact that came from it")
     # Reached only by a segment no source form recognised. Returning None here
     # is how `Deferred Q8` rode into a spec behind a valid `Settled Q5`: an
     # unrecognised source is not a resolved one.
     return (f"'{src}' is not a source form — valid: Settled Q<n> | "
-            f"Grounding fact <n> | Strategy (chosen) | Principle: <file> | "
-            f"ADR-<id> | a ## Reads file")
+            f"Grounding fact <n> | Strategy (chosen) | Principle: <file> | ADR-<id>")
 
 
 # ----------------------------------------------------------------------- plan

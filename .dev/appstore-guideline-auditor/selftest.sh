@@ -155,6 +155,57 @@ out="$(collect "$WEIRD" weird)"
 assert_has  "unknown product type says it is unknown" "unrecognised-product-types"   "$out"
 assert_lacks "unknown type not called a test target"  "only tests, frameworks"       "$out"
 
+# A manifest the collector cannot tie to a target is not a manifest the target
+# lacks. Only a project with no manifest anywhere establishes absence; a null
+# path with manifests on disk has to say "unattributed", or a compliant target
+# is reported as shipping none, at critical severity, graded PROVEN.
+assert_has "no manifest anywhere is established absence" "none-in-project" "$(field generated privacy_manifest_source)"
+MAN="$ROOT/manifests"
+pbxproj "$MAN/App.xcodeproj/project.pbxproj" App "com.apple.product-type.application" \
+  'GENERATE_INFOPLIST_FILE = YES;'
+mkdir -p "$MAN/App/Resources" "$MAN/Widget"
+: > "$MAN/App/Resources/PrivacyInfo.xcprivacy"; : > "$MAN/Widget/PrivacyInfo.xcprivacy"
+: > "$MAN/App/Camera.swift"
+collect "$MAN" manifests >/dev/null
+assert_has "manifests on disk but untied are unattributed" "unattributed" "$(field manifests privacy_manifest_source)"
+BESIDE="$ROOT/beside"
+pbxproj "$BESIDE/App.xcodeproj/project.pbxproj" App "com.apple.product-type.application" \
+  'INFOPLIST_FILE = "App/Info.plist";'
+plist "$BESIDE/App/Info.plist"; mkdir -p "$BESIDE/Other"
+: > "$BESIDE/App/PrivacyInfo.xcprivacy"; : > "$BESIDE/Other/PrivacyInfo.xcprivacy"
+collect "$BESIDE" beside >/dev/null
+assert_has "a manifest beside the plist is tied to the target" '"file"' "$(field beside privacy_manifest_source)"
+
+# Source files are facts about the project: the collector reads no build phase,
+# so it cannot say which target compiles which file. A copy of the list inside
+# target-X.json reads as that target's sources, and an app's camera call then
+# supports a PROVEN finding against a widget's Info.plist.
+jsonkeys() { python3 -c "import json,sys;print(' '.join(sorted(json.load(open(sys.argv[1])))))" "$1"; }
+assert_lacks "a target file carries no source list"      "sources"       "$(jsonkeys "$ROOT/out/manifests/target-App.json")"
+assert_has   "sources are written once for the project"  "Camera.swift"  "$(cat "$ROOT/out/manifests/project.json")"
+assert_has   "project file lists every manifest found"   "Widget/PrivacyInfo.xcprivacy" "$(cat "$ROOT/out/manifests/project.json")"
+
+# A package.json that cannot be read is not evidence the project is native. The
+# React Native, Expo and Capacitor check reads it, so the run says it was skipped.
+PKG="$ROOT/badpackage"
+pbxproj "$PKG/App.xcodeproj/project.pbxproj" App "com.apple.product-type.application" 'GENERATE_INFOPLIST_FILE = YES;'
+printf '{ "dependencies": ' > "$PKG/package.json"
+out="$(collect "$PKG" badpackage)"
+assert_has "an unreadable package.json marks the run degraded" "DEGRADED: package.json" "$out"
+
+# plutil rejecting the project file is a fault in the project, and a missing
+# plutil is a fault in the machine. One message for both sends the developer to
+# fix the wrong one.
+REJ="$ROOT/rejected"
+pbxproj "$REJ/App.xcodeproj/project.pbxproj" App "com.apple.product-type.application" 'GENERATE_INFOPLIST_FILE = YES;'
+printf '}}}\n' >> "$REJ/App.xcodeproj/project.pbxproj"
+out="$(collect "$REJ" rejected)"
+if command -v plutil >/dev/null 2>&1; then
+  assert_has "a plutil failure is reported as a failure" "plutil could not convert" "$out"
+else
+  assert_has "a missing plutil is reported as missing"   "plutil is not installed"  "$out"
+fi
+
 echo "scratch containment"
 mkdir -p "$ROOT/precious"; echo keep > "$ROOT/precious/thesis.txt"
 bash "$SCRIPTS/collect-context.sh" "$GEN" "$ROOT/precious" >/dev/null 2>&1
@@ -163,6 +214,50 @@ bash "$SCRIPTS/collect-context.sh" "$GEN" "$ROOT/precious" >/dev/null 2>&1
 bash "$SCRIPTS/collect-context.sh" "$GEN" "$GEN/deep/scratch" >/dev/null 2>&1
 [ -e "$GEN/deep" ] && bad "creates nothing inside the audited project" "$GEN/deep was created" \
   || ok "creates nothing inside the audited project"
+
+echo "read-only check"
+# The promise is that the audit leaves the project as it found it apart from the
+# report. Each case below is one way that promise can be broken, and the check
+# has to name the file rather than print UNTOUCHED.
+UT="$ROOT/untouched-scratch"
+bash "$SCRIPTS/collect-context.sh" "$GEN" "$UT" >/dev/null 2>&1
+[ -s "$UT/project-files.before" ] && ok "the collector snapshots the file list" \
+  || bad "the collector snapshots the file list" "no project-files.before in the scratch directory"
+
+untouched() { bash "$SCRIPTS/check-untouched.sh" "$GEN" "$UT" "$@" 2>&1; }
+
+out="$(untouched)"; rc=$?
+[ $rc -eq 0 ] && ok "an untouched project passes" || bad "an untouched project passes" "exit $rc: $out"
+
+mkdir -p "$GEN/.appstore-audit"; echo report > "$GEN/.appstore-audit/report.md"
+out="$(untouched)"; rc=$?
+[ $rc -eq 0 ] && ok "the report itself is not a violation" || bad "the report itself is not a violation" "exit $rc: $out"
+
+echo stray > "$GEN/stray.txt"
+out="$(untouched)"; rc=$?
+[ $rc -eq 1 ] && ok "a created file fails the check" || bad "a created file fails the check" "exit $rc"
+assert_has "a created file is named" "created  ./stray.txt" "$out"
+rm "$GEN/stray.txt"
+
+VICTIM="$(cd "$GEN" && find . -type f -name '*.pbxproj' | head -1)"
+touch -t 203001010000 "$GEN/$VICTIM"
+out="$(untouched)"; rc=$?
+[ $rc -eq 1 ] && ok "a changed file fails the check" || bad "a changed file fails the check" "exit $rc"
+assert_has "a changed file is named" "changed  $VICTIM" "$out"
+
+mv "$GEN/$VICTIM" "$ROOT/victim.moved"
+out="$(untouched)"
+assert_has "a deleted file is named" "deleted  $VICTIM" "$out"
+mv "$ROOT/victim.moved" "$GEN/$VICTIM"; touch "$GEN/$VICTIM"
+
+out="$(untouched --report "$ROOT/elsewhere/report.md")"; rc=$?
+[ $rc -eq 1 ] && ok "a report redirected elsewhere does not excuse the default path" \
+  || bad "a report redirected elsewhere does not excuse the default path" "exit $rc"
+
+rm "$UT/project-files.before"
+untouched >/dev/null 2>&1; rc=$?
+[ $rc -eq 2 ] && ok "a missing snapshot is an error, not a pass" || bad "a missing snapshot is an error, not a pass" "exit $rc"
+rm -rf "$GEN/.appstore-audit"
 
 echo "catalogue gate"
 out="$(bash "$SCRIPTS/check-catalogue.sh" 2>&1)"
@@ -187,8 +282,9 @@ lines += ["- **5.1.1(i) Data Collection and Storage**",
           "- **5.1.1(ii) Permission**", "  Another sub-clause body.", ""]
 open(out, "w").write("\n".join(lines))
 PY
-out="$(APPSTORE_GUIDELINE_TEXT="$GL" bash "$SCRIPTS/check-catalogue.sh" 2>&1)"
+out="$(bash "$SCRIPTS/check-catalogue.sh" --guideline-text "$GL" 2>&1)"
 assert_has "every citation resolves against the text" "CATALOGUE OK" "$out"
+assert_has "the citation layer ran"                   "guideline citation(s) checked" "$out"
 
 RETIRED="$ROOT/retired.md"
 python3 -c "
@@ -196,8 +292,27 @@ import sys
 t = open(sys.argv[1]).read().replace('- **5.1.1 Clause 5.1.1**\n  Body for 5.1.1.',
                                      '- **5.1.1** Intentionally omitted.')
 open(sys.argv[2], 'w').write(t)" "$GL" "$RETIRED"
-out="$(APPSTORE_GUIDELINE_TEXT="$RETIRED" bash "$SCRIPTS/check-catalogue.sh" 2>&1)"
+out="$(bash "$SCRIPTS/check-catalogue.sh" --guideline-text "$RETIRED" 2>&1)"
 assert_has "a retired clause with sub-clauses is caught" "intentionally omitted" "$out"
+
+# The retrieved text is a model's reproduction of Apple's page and can come back
+# cut short. Every clause it lost then looks like a rule whose number drifted,
+# so a text that cannot be the whole page is not judged: the citations are
+# unverified, and no rule is reported as wrongly cited.
+CUT="$ROOT/cut.md"
+python3 -c "
+import sys
+keep = [l for l in open(sys.argv[1]).read().split('\n- **') if not l.startswith(('4.', '5.'))]
+open(sys.argv[2], 'w').write('\n- **'.join(keep))" "$GL" "$CUT"
+out="$(bash "$SCRIPTS/check-catalogue.sh" --guideline-text "$CUT" 2>&1)"
+assert_has   "a cut-off text leaves citations unverified" "citations NOT verified" "$out"
+assert_lacks "a cut-off text is not reported as drift"    "wrong-citation"         "$out"
+
+# The text is passed as an argument because a leading VAR=value assignment puts
+# the command outside the skill's permission rule. A mistyped option must not
+# run the gate without the citation layer and report the catalogue clean.
+out="$(bash "$SCRIPTS/check-catalogue.sh" --guideline_text "$GL" 2>&1)"
+assert_has "an unknown option is refused, not read as a rule file" "unknown option" "$out"
 
 echo "findings validator"
 mk() { printf '%s' "$2" > "$ROOT/$1.json"; }
@@ -216,6 +331,28 @@ expect "an invented rule id is refused"             invented refuse
 expect "a drifted guideline and severity is refused" drifted  refuse
 expect "a MANUAL rule emitted as a finding is refused" manual refuse
 expect "PROVEN without a line is refused"           noline   refuse
+
+mk withheld '{"category":"legal","status":"completed","checklist":[],"findings":[],"withheld":[{"rule":"privacy-manifest-absent","target":"Widget","reason":"privacy_manifest_source is unreadable-project"}],"uncatalogued":["A hard-coded review prompt on first launch"]}'
+mk statusnote '{"category":"legal","status":"completed: withheld privacy-manifest-absent","checklist":[],"findings":[]}'
+expect "a withheld rule and an uncatalogued note are accepted" withheld pass
+expect "a note written into status is refused"       statusnote refuse
+
+# A policy page that was fetched and checked by nothing is "retrieved". Without
+# that state the only words left for it are verified, which it is not, and
+# unverified, which says it was never fetched.
+mk retrieved '{"category":"legal","status":"completed","checklist":[],"findings":[{"rule":"privacy-manifest-absent","guideline":"5.1.1","severity":"critical","verifiability":"PROVEN","target":"App","file":"App","absence":true,"issue":"No privacy manifest in this target","evidence":"no PrivacyInfo.xcprivacy anywhere in the project","resolutions":["Add a PrivacyInfo.xcprivacy to the App target"],"citations":[{"source":"guidelines","state":"verified"},{"source":"policy","state":"retrieved"}]}]}'
+expect "a retrieved policy source is accepted"       retrieved pass
+
+# A category whose agent wrote nothing has no file. Named, it is refused; the
+# skill names all five for that reason.
+expect "a findings file that does not exist is refused" never-written refuse
+
+# With a category's rules file missing, its findings would be refused as citing
+# invented rules. The cause is the installation, and the message has to say so.
+mkdir -p "$ROOT/partial-rules"; cp "$PLUGIN/rules/legal.json" "$ROOT/partial-rules/"
+out="$(python3 "$SCRIPTS/lib/check_findings.py" "$ROOT/good.json" "$ROOT/partial-rules" 2>&1)" && got=pass || got=refuse
+[ "$got" = refuse ] && ok "an incomplete catalogue is refused" || bad "an incomplete catalogue is refused" "expected refuse, got $got"
+assert_has "an incomplete catalogue names the missing file" "safety.json does not exist" "$out"
 
 echo
 if [ $fail -eq 0 ]; then

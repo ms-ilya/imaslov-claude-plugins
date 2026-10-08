@@ -4,8 +4,7 @@
 #
 # structured-plan-mode asks for the status in three places at once — the task
 # file, the plan, and a native task list. That is three chances to update two.
-# Here the task file owns it and the table is derived, exactly as
-# bump-protocol.sh owns the record's counters rather than accepting a self-report.
+# Here the task file owns it and the table is derived.
 set -uo pipefail
 
 usage() {

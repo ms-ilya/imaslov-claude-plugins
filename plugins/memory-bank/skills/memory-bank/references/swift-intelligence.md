@@ -10,7 +10,7 @@ Load this reference only when working with Swift projects (detected by: `Package
 | Interface Builder | `.xib`, `.storyboard` | Check for view controller references |
 | Assets | `.xcassets` | Feature-related asset catalogs |
 | Config | `.xcconfig`, `.entitlements`, `Info.plist` | Build and entitlement settings |
-| Project | `.xcodeproj`, `.xcworkspace`, `Package.swift` | Do NOT read `.pbxproj` (binary) |
+| Project | `.xcodeproj`, `.xcworkspace`, `Package.swift` | `project.pbxproj` is text but very large: search it for the setting or target you need, don't read it whole |
 
 ## Patterns to Identify
 
@@ -18,9 +18,9 @@ Load this reference only when working with Swift projects (detected by: `Package
 |------|-----------------|
 | **Architecture** | MVVM, MVC, Clean/VIPER, Coordinator, TCA (The Composable Architecture) |
 | **UI** | SwiftUI views (`View` protocol), UIKit view controllers, mixed approaches |
-| **Concurrency** | Combine publishers, async/await, `@MainActor`, `Sendable`, actors |
+| **Concurrency** | Combine publishers, async/await, `@MainActor`, `Sendable`, actors. Record each target's Swift language mode and default actor isolation from its build settings or `Package.swift`: they differ per target and change what the same code means |
 | **DI** | Protocol-based DI, `@EnvironmentObject`, `@Injected` wrappers, factory patterns |
-| **Property wrappers** | `@Published`, `@State`, `@Binding`, `@EnvironmentObject`, `@AppStorage` |
+| **State & observation** | `@Observable` models with `@State` / `@Bindable` / `@Environment`, or `ObservableObject` with `@Published` / `@StateObject` / `@EnvironmentObject`; `@Binding`, `@AppStorage`; SwiftData `@Model` / `@Query` |
 | **Module structure** | Targets, frameworks, SPM packages, feature modules |
 | **Build system** | Schemes, configurations, build phases, run scripts |
 
@@ -34,4 +34,4 @@ Note these Swift-specific attributes in IMPLEMENTATION.md:
 
 ## Always Ignore
 
-`DerivedData/`, `.build/`, `Pods/`, `*.generated.swift`, `*.pbxproj`, build caches.
+`DerivedData/`, `.build/`, `Pods/`, `*.generated.swift`, build caches.

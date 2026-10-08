@@ -41,7 +41,7 @@ Driven by the requirement count and their dependencies, never by a target.
 |---|---|
 | 1–3 requirements | 1–2 tasks |
 | 4–8 requirements | 3–5 tasks |
-| 9+ requirements, or several independent surfaces | 5+ tasks, and ask whether the feature should have been split |
+| 9+ requirements, or several independent surfaces | 5+ tasks, and say in the report that the feature may be several |
 
 **Two failure directions, both real.** One task per requirement, mechanically, is
 over-decomposition: it produces a plan where three tasks all touch one function
@@ -120,7 +120,7 @@ invitation to re-decide.
 | `Touches:` and `## Seams` | The record's `## Grounding facts` |
 | Risk ordering | The record's confidence marks and thin rationales |
 | Constraints on how | The record's `## Principles in force`, and any promoted ADR |
-| `## Open questions` | The spec's `[NEEDS CLARIFICATION]` markers, copied intact |
+| `## Open questions carried from the spec` | The spec's `[NEEDS CLARIFICATION]` markers, copied intact |
 
 **Anything with no row in that table is a plan assumption**, and it goes in
 `## Plan assumptions` with its reversal cost (R21). That is not a discouragement

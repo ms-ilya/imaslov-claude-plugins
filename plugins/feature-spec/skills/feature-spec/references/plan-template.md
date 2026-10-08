@@ -73,7 +73,7 @@ Implementation decisions the spec did not settle. Each names its reversal cost.
 
 ## Open questions carried from the spec
 
-- [NEEDS CLARIFICATION: per-source overrides — low impact, deferred to post-launch]
+- [NEEDS CLARIFICATION: Q12 — per-source overrides, low impact, deferred to post-launch]
 
 ## Lessons
 
@@ -131,7 +131,7 @@ Filled when the task completes. Empty until then.
 | `## Not planned` | Every FR and SC no task covers, with the reason (R18). Empty is written as `_nothing — …_`, never deleted. |
 | `## Enabling work` | Tasks covering no requirement, with what each unblocks (R19). Legal, and never silent. |
 | `## Plan assumptions` | One line per decision the spec did not settle, in the form `- <decision> — **Reversing:** <cost>` (R21). The dash form is checked. |
-| `## Open questions` | Every `[NEEDS CLARIFICATION]` the spec carries, copied intact (R20). |
+| `## Open questions carried from the spec` | Every `[NEEDS CLARIFICATION]` the spec carries, copied intact (R20). |
 | `## Lessons` | Written after the work ships, by whoever shipped it. Not this command's output. |
 
 | Task field | Rule |
@@ -168,8 +168,7 @@ This is deliberate, and it is the one place this plan format departs from the
 structured-plan-mode design it otherwise follows. That design asks for a status
 kept in three places at once — the task file, the plan, and a native task list —
 which is three chances to update two of them. A number recomputed from its source
-cannot fall behind it, and the plugin already takes exactly this line with the
-design record's protocol counters.
+cannot fall behind it.
 
 ## Covers tags — every task
 
@@ -212,8 +211,10 @@ either hides the work or invents a requirement to justify it. The rule is not
 *don't*; it is *say so, and say what it unblocks* (R19).
 
 **Plan assumptions are unavoidable.** The spec states behaviour and refuses to
-name a type, a library or a function — so **every** technology choice in the plan
-is a decision nobody has made yet. Recording them with a reversal cost is what
+name a type, a library or a function — so every technology choice in the plan is
+a decision nobody has made yet. The one exception is what the spec lists under
+`## Implementation constraints`: the user fixed those before the plan, so follow
+them and do not list them as assumptions. Recording them with a reversal cost is what
 stops the plan reading as though the interview settled them (R21). A plan with an
 empty assumptions section on a non-trivial feature is not a plan without
 assumptions; it is a plan whose assumptions are invisible.

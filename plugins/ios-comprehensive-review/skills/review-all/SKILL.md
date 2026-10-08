@@ -3,41 +3,30 @@ name: review-all
 description: >-
   Run a complete iOS/Swift comprehensive code review in one command.
   Uses 5 specialized parallel agents across 4 stages: extraction, per-file
-  analysis, cross-file checks (DRY/breaking/SOLID), and report generation.
+  analysis, cross-file checks (DRY/breaking/SOLID), and a verified report.
   Use when the project is iOS/Swift and the user asks for "full review",
   "comprehensive review", "deep review", "review PR N", "review everything",
   "complete code review", "multi-agent review", "analyze PR", "review branch",
   "full iOS review", "run comprehensive review", or "check PR N".
   Do NOT use for quick single-file reviews — use ios-quick-review instead.
 argument-hint: <PR number> or --base <branch> [--branch <branch>]
-allowed-tools: Bash, Glob, Agent, TaskOutput, TodoWrite
+allowed-tools:
+  - Agent
+  - Bash(jq *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/extract-pr-context.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/findings-worklist.sh *)
+  - Bash(bash ${CLAUDE_PLUGIN_ROOT}/scripts/build-report.sh *)
+  - Bash(rm -rf .ios-review-temp)
+  - "Bash(find .ios-review-temp -type f ! -name 'ios-review-report.md' -delete)"
 ---
 
 ## EXECUTION
 
-### 1. Setup Progress
+Report one line of progress as each stage starts and finishes.
 
-```
-TodoWrite([
-  {content: "Extract PR/branch context", status: "in_progress", activeForm: "Extracting PR/branch context"},
-  {content: "Analyze changed files", status: "pending", activeForm: "Analyzing changed files"},
-  {content: "Run cross-file checks", status: "pending", activeForm: "Running cross-file checks"},
-  {content: "Generate review report", status: "pending", activeForm: "Generating review report"},
-  {content: "Clean up temp files", status: "pending", activeForm: "Cleaning up temp files"}
-])
-```
+### 1. Extract Context
 
-### 2. Extract Context
-
-```bash
-command -v jq >/dev/null 2>&1 || { echo "ERROR: jq not installed (brew install jq)"; exit 1; }
-```
-
-```bash
-rm -rf .ios-review-temp && ${CLAUDE_SKILL_DIR}/../../scripts/extract-pr-context.sh $ARGUMENTS
-```
-
-If no arguments provided, show usage and stop:
+If no arguments were provided, show usage and stop:
 ```
 Usage: Review PR <number>
        Review branch developer against main
@@ -45,16 +34,31 @@ Usage: Review PR <number>
        /ios-comprehensive-review:review-all --base <branch> [--branch <branch>]
 ```
 
-Verify:
+Check the dependency:
 ```bash
-test -f .ios-review-temp/pr-context.json && echo "OK" || echo "FAILED"
+which jq
+```
+If jq is missing: report "jq not installed (brew install jq)" and stop.
+
+**Resume check.** A finished run deletes `pr-context.json` (step 5), so one that is still there belongs to an interrupted run:
+```bash
+jq -r '"\(.pr_number)|\(.head_branch)|\(.base_branch)"' .ios-review-temp/pr-context.json
+```
+- The command fails (no file): this is a fresh run. Extract.
+- It prints the same PR number, or the same base and head branch, as the arguments: resume. Tell the user the interrupted review is being continued and that deleting `.ios-review-temp/` starts over, then go to step 2 without extracting.
+- It prints a different target: extract.
+
+Extract:
+```bash
+rm -rf .ios-review-temp
+```
+```bash
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/extract-pr-context.sh $ARGUMENTS
 ```
 
-If FAILED: report error and stop.
+If the script exits non-zero or `.ios-review-temp/pr-context.json` was not created: report the script's error and stop.
 
-Mark extract completed, analyze in_progress.
-
-### 3. Analyze Files
+### 2. Analyze Files
 
 Load file list:
 
@@ -62,141 +66,119 @@ Load file list:
 jq -r '.changed_files[] | select(.change_type != "deleted") | "\(.path)|\(.added_lines | @json)|\(.new_symbols | @json)"' .ios-review-temp/pr-context.json
 ```
 
-If no files: report "No analyzable files" → skip to step 4.
-
-**Resume check:** `Glob(".ios-review-temp/review-*.json")` → build set of completed SafePaths.
+If no files: report "No analyzable files" → skip to step 3.
 
 SafePath: replace `/` with `--`, spaces with `__`, dots with `_DOT_`, remove `.swift` extension only.
 
-Filter to only files WITHOUT existing `review-[SAFEPATH].json`.
+**Resume check:** `ls .ios-review-temp/` → a file is done when its `review-[SAFEPATH].json` exists. Keep only the files without one.
 
-If all files processed: report "All files already analyzed" → skip to step 4.
+If all files processed: report "All files already analyzed" → skip to step 3.
 
-**Process files in batches of 20:**
+**Process files in batches of 10.** Claude Code caps concurrent subagents at 20, and a batch at the cap fails to spawn whenever anything else is running.
 
-For each batch, spawn ALL files in ONE message with `run_in_background: true`:
+For each batch, spawn ALL files in ONE message:
 
 ```
-Agent(run_in_background: true,
-     subagent_type: "ios-comprehensive-review:file-analyzer",
+Agent(subagent_type: "ios-comprehensive-review:file-analyzer",
      prompt: "FILE_PATH: [path]
 ADDED_LINES: [\"42-50\", \"88\"]
 NEW_SYMBOLS: [JSON array]
 OUTPUT_FILE: .ios-review-temp/review-[SAFEPATH].json")
 ```
 
-Collect returned `task_id` for each spawned agent.
-
 Report: `Spawned batch X/Y (N files)`
 
-Collect results for each `task_id`:
+Subagents run in the background and each one reports back on its own when it finishes. Wait until every agent in the batch has reported; do not poll, sleep, or read their transcripts. Their findings are in the output files, not in the reports.
 
-```
-TaskOutput(task_id: [id], block: true, timeout: 600000)
-```
+After the batch has reported, `ls .ios-review-temp/` and re-spawn, once, in the next batch every file whose `review-[SAFEPATH].json` is missing. A file that is still missing after its second attempt is a failure: record it and continue.
 
-Do NOT poll with `block: false`. Use `block: true` which waits automatically.
-
-**Timeout retry:** If `TaskOutput` returns a timeout (retrieval_status: timeout, or no meaningful result), the agent is still running. Call `TaskOutput` again with the SAME `task_id` and `block: true, timeout: 600000`. Repeat until the agent completes or fails. There is no limit on retries — agents must be given as much time as they need.
-
-Failed files retry once in the next batch. After second failure: record, continue.
-
-Mark analyze completed, cross-check in_progress.
-
-### 4. Cross-File Checks
+### 3. Cross-File Checks
 
 Load counts:
 
 ```bash
-echo "FUNCTIONS:$(jq '[.changed_files[] | .new_symbols[] | select(.type == "function")] | length' .ios-review-temp/pr-context.json)"
-echo "TYPES:$(jq '[.changed_files[] | .new_symbols[] | select(.type != "function" and .type != "property")] | length' .ios-review-temp/pr-context.json)"
-echo "SIGNATURES:$(jq '.signature_changes | length' .ios-review-temp/pr-context.json)"
+jq -r '"FUNCTIONS:\([.changed_files[] | .new_symbols[] | select(.type == "function")] | length) TYPES:\([.changed_files[] | .new_symbols[] | select(.type != "function" and .type != "property")] | length) SIGNATURES:\(.signature_changes | length)"' .ios-review-temp/pr-context.json
 ```
 
-If ALL counts are 0: report "No cross-file analysis needed" → skip to step 5.
+If ALL counts are 0: report "No cross-file analysis needed" → skip to step 4.
 
-**Resume check:** `Glob(".ios-review-temp/*-analysis.json")` → skip agents with existing outputs.
+**Resume check:** `ls .ios-review-temp/` → skip an agent whose `*-analysis.json` output exists.
 
 Extract detailed data:
 
 ```bash
 # Functions (name|file:line)
 jq -r '.changed_files[] | .path as $p | .new_symbols[] | select(.type == "function") | "\(.name)|\($p):\(.line)"' .ios-review-temp/pr-context.json
-
+```
+```bash
 # Types (name|file:line)
 jq -r '.changed_files[] | .path as $p | .new_symbols[] | select(.type != "function" and .type != "property") | "\(.name)|\($p):\(.line)"' .ios-review-temp/pr-context.json
-
+```
+```bash
 # Signature changes (method|old_sig|new_sig|file:line|change_type)
 jq -r '.signature_changes[] | "\(.method)|\(.old_signature)|\(.new_signature // "")|\(.file):\(.line)|\(.change_type)"' .ios-review-temp/pr-context.json
 ```
 
-Spawn ALL applicable agents (not already complete) in ONE message with `run_in_background: true`:
+Spawn ALL applicable agents (not already complete) in ONE message:
 
 - New functions exist AND no `dry-analysis.json` → spawn dry-analyzer
 - Signature changes exist AND no `breaking-analysis.json` → spawn breaking-analyzer
 - (New types OR new functions) AND no `solid-analysis.json` → spawn solid-analyzer
 
 ```
-Agent(run_in_background: true,
-     subagent_type: "ios-comprehensive-review:dry-analyzer",
+Agent(subagent_type: "ios-comprehensive-review:dry-analyzer",
      prompt: "NEW_FUNCTIONS:\n[list]\nOUTPUT_FILE: .ios-review-temp/dry-analysis.json")
 
-Agent(run_in_background: true,
-     subagent_type: "ios-comprehensive-review:breaking-analyzer",
+Agent(subagent_type: "ios-comprehensive-review:breaking-analyzer",
      prompt: "SIGNATURE_CHANGES:\n[list]\nOUTPUT_FILE: .ios-review-temp/breaking-analysis.json")
 
-Agent(run_in_background: true,
-     subagent_type: "ios-comprehensive-review:solid-analyzer",
+Agent(subagent_type: "ios-comprehensive-review:solid-analyzer",
      prompt: "NEW_TYPES:\n[list]\nNEW_FUNCTIONS:\n[list]\nOUTPUT_FILE: .ios-review-temp/solid-analysis.json")
 ```
 
-Collect results with `TaskOutput(task_id: [id], block: true, timeout: 600000)`.
+Wait until every spawned agent has reported, as in step 2. Then `ls .ios-review-temp/` and re-spawn once any agent whose output file is missing. One still missing after its second attempt is a failure: record it and continue.
 
-**Timeout retry:** If `TaskOutput` returns a timeout (retrieval_status: timeout, or no meaningful result), the agent is still running. Call `TaskOutput` again with the SAME `task_id` and `block: true, timeout: 600000`. Repeat until the agent completes or fails. There is no limit on retries — agents must be given as much time as they need.
+### 4. Verify Findings and Build the Report
 
-Mark cross-check completed, report in_progress.
+The analyzers each saw a narrow slice of the code, so their critical and warning findings are re-checked by an agent that did not write them before anything reaches the report.
 
-### 5. Generate Report
-
-Extract metadata:
+List the findings that still need a verdict:
 
 ```bash
-jq -r '"\(.pr_number)|\(.title)|\(.author)|\(.head_branch)|\(.base_branch)|\(.changed_files | length)"' .ios-review-temp/pr-context.json
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/findings-worklist.sh
 ```
 
-Parse PR_NUMBER, TITLE, AUTHOR, HEAD_BRANCH, BASE_BRANCH, FILE_COUNT (pipe-delimited).
+Each output line is one finding as a JSON object. No output: nothing to verify → go straight to building the report.
 
-Spawn report aggregator:
+Split the lines into batches of at most 15, keeping the findings of one `file` in the same batch so that a verifier reads each file once. `ls .ios-review-temp/` and number the batches after the highest existing `verdicts-N.json`. Spawn ALL batches in ONE message:
 
 ```
-Agent(subagent_type: "ios-comprehensive-review:report-aggregator",
-     prompt: "PR_NUMBER: [N]\nTITLE: [T]\nAUTHOR: [A]\nBRANCH: [HEAD] → [BASE]\nFILES: [COUNT]")
+Agent(subagent_type: "ios-comprehensive-review:finding-verifier",
+     prompt: "WORKLIST:
+[the batch's lines, copied exactly]
+OUTPUT_FILE: .ios-review-temp/verdicts-[N].json")
 ```
 
-Verify:
+Wait until every verifier has reported, as in step 2. Run the worklist script again: findings it still lists got no verdict, so spawn one more round for them. Whatever is still listed after that round stays in the report, marked unverified.
+
+Build the report:
+
 ```bash
-test -f .ios-review-temp/ios-review-report.md && echo "OK" || echo "FAILED"
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/build-report.sh
 ```
 
-Count findings:
-```bash
-jq -r '.findings[] | .severity' .ios-review-temp/*.json 2>/dev/null | sort | uniq -c
-```
+The script writes `.ios-review-temp/ios-review-report.md` and prints the counts. If it exits non-zero: report its error and stop. Leave the intermediate files in place so that a re-run resumes from here.
 
-Mark report completed, cleanup in_progress.
-
-### 6. Clean Up Temp Files
+### 5. Clean Up Temp Files
 
 Remove all intermediate files from `.ios-review-temp/`, keeping only the final report:
 
 ```bash
-find .ios-review-temp -type f ! -name 'ios-review-report.md' -delete 2>/dev/null && echo "OK" || echo "FAILED"
+find .ios-review-temp -type f ! -name 'ios-review-report.md' -delete
 ```
 
-Mark cleanup completed.
+### 6. Final Summary
 
-### 7. Final Summary
+`Complete. Report: .ios-review-temp/ios-review-report.md | ` followed by the count line `build-report.sh` printed.
 
-```
-Complete. Report: .ios-review-temp/ios-review-report.md | Critical: X | Warning: Y | Suggestion: Z
-```
+List any files or agents recorded as failures in steps 2 and 3. A review that silently skipped a file reads as a clean one.

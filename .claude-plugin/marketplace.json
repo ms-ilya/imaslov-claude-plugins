@@ -1,5 +1,6 @@
 {
   "name": "imaslov-claude-plugins",
+  "description": "Claude Code plugins by Ilya Maslau: iOS/Swift code review, App Store guideline audits, pre-task interviews and feature specs, root cause analysis, debugging journals, project documentation, multi-agent debate, and AI-text humanizing.",
   "owner": {
     "name": "Ilya Maslau"
   },
@@ -7,56 +8,52 @@
     {
       "name": "ios-comprehensive-review",
       "source": "./plugins/ios-comprehensive-review",
-      "description": "Multi-agent comprehensive iOS/Swift code review with parallel analysis, cross-file checks, and resumable stages.",
-      "version": "1.1.0"
+      "description": "Multi-agent comprehensive iOS/Swift code review with parallel analysis, cross-file checks, and resumable stages."
     },
     {
       "name": "scratchpad",
       "source": "./plugins/scratchpad",
-      "description": "Context-preserving debugging journal. Command: /scratchpad.",
-      "version": "1.0.0"
+      "description": "Context-preserving debugging journal. Command: /scratchpad."
     },
     {
       "name": "memory-bank",
       "source": "./plugins/memory-bank",
-      "description": "Living project documentation with anti-hallucination verification. Commands: init, update, system-update, add-decision.",
-      "version": "1.0.0"
+      "description": "Living project documentation with anti-hallucination verification. Commands: init, update, system-update, add-decision."
     },
     {
       "name": "multi-agent-debate",
       "source": "./plugins/multi-agent-debate",
-      "description": "Structured multi-agent debate that spawns parallel LLM agents for adversarial analysis and synthesis.",
-      "version": "2.0.0"
+      "description": "Structured multi-agent debate that spawns parallel LLM agents for adversarial analysis and synthesis."
     },
     {
       "name": "ios-quick-review",
       "source": "./plugins/ios-quick-review",
-      "description": "Efficient multi-pass iOS/Swift code review for commits or uncommitted changes.",
-      "version": "1.0.0"
+      "description": "Efficient multi-pass iOS/Swift code review for commits or uncommitted changes."
     },
     {
       "name": "root-cause-analysis",
       "source": "./plugins/root-cause-analysis",
-      "description": "Systematic root cause analysis using 5 Whys, fishbone diagrams, and structured RCA reports.",
-      "version": "1.0.0"
+      "description": "Systematic root cause analysis using 5 Whys, fishbone diagrams, and structured RCA reports."
     },
     {
       "name": "humanizer",
       "source": "./plugins/humanizer",
-      "description": "Remove AI writing patterns from text. Priority-tiered detection, statistical texture, voice anchoring, two-pass self-audit.",
-      "version": "1.0.1"
+      "description": "Remove AI writing patterns from text. Priority-tiered detection, statistical texture, voice anchoring, two-pass self-audit."
     },
     {
       "name": "appstore-guideline-auditor",
       "source": "./plugins/appstore-guideline-auditor",
-      "description": "Read-only App Store guideline audit for native iOS projects. Findings graded by severity and by evidence strength, citations checked against Apple's current text, plus a generated App Store Connect checklist.",
-      "version": "1.1.0"
+      "description": "Read-only App Store guideline audit for native iOS projects. Findings graded by severity and by evidence strength, citations checked against Apple's current text, plus a generated App Store Connect checklist."
+    },
+    {
+      "name": "grill-me",
+      "source": "./plugins/grill-me",
+      "description": "Pre-task interview that states its assumptions, asks only the decisions it cannot look up, probes for what you have not thought of, and leaves a written brief with a readiness verdict. Command: /grill-me."
     },
     {
       "name": "feature-spec",
       "source": "./plugins/feature-spec",
-      "description": "Bounded, resumable requirements interview that ends in a critic-verified spec, then turns that spec into a checked implementation plan. Commands: feature-spec, grill, write, plan.",
-      "version": "1.1.0"
+      "description": "Turns what you already have into a critic-verified spec, asking only about what is still unclear, then turns that spec into a checked implementation plan. Commands: feature-spec, feature-spec-plan."
     }
   ]
 }

@@ -1,10 +1,11 @@
 # Coverage taxonomy
 
-Ten categories, four states, one stopping rule. Re-scored **every round** and
-printed **every round**, even when nothing moved.
+Ten categories, four states, one stopping rule. Scored from the record at
+intake, then re-scored and printed after **every round**, even when nothing moved.
 
-Two jobs, both load-bearing: it decides *whether the interview keeps going*, and
-it gives the critic a definition of "complete" that is not taste.
+Two jobs, both load-bearing: it decides *whether a clarifying round runs at all,
+and whether another does*, and it gives the critic a definition of "complete" that
+is not taste.
 
 Use the category names **verbatim**. Paraphrase one and the table stops being
 comparable to itself across rounds, which is the only thing it is for.
@@ -52,7 +53,7 @@ they are two categories and not one with two names.
 
 | State | Definition |
 |---|---|
-| **Missing** | No information. Not asked, not inferable from a grounding fact. |
+| **Missing** | No decision here, and no grounding fact that implies one. A fact about how the code behaves today is not a decision about the feature. |
 | **Partial** | Some answers exist, but at least one decision here is unmade — *or* an answer contains an unquantified adjective. |
 | **Clear** | Every decision here is made and stated in language you could hand to someone else — *or* explicitly deferred within the bound below. |
 | **N/A** | The category genuinely does not apply, **with a one-line reason.** |
@@ -91,32 +92,35 @@ they are two categories and not one with two names.
 
 ## The stopping rule
 
-> The interview may end when **no category is Missing**, and **no category is
-> `Clear*` by a High-impact deferral.**
+> No clarifying round is needed, and a run that has been asking may stop, when
+> **no category is Missing** and **no high-impact question is open on the
+> frontier.**
 
 Partial is acceptable — Partial items ship as `[NEEDS CLARIFICATION]` markers.
 Missing means a whole dimension was never considered, which is not the same
 thing and is not shippable.
 
-The second clause is what stops the stopping rule from being satisfiable by
-deferring everything.
+Deferring everything does not satisfy the rule: a High-impact deferral holds its
+category at Partial and stays on the frontier's account.
 
 **When more than a third of categories end as `Clear*`, say so plainly in the
-final report:** *"most of this spec is open questions — consider another round,
-or a narrower feature."* Reporting it is not optional. A `Clear*`-heavy spec
+final report:** *"most of this spec is open questions — fuller input would
+close them, or a narrower feature."* Reporting it is not optional. A `Clear*`-heavy spec
 that reads as finished is the failure this taxonomy exists to prevent.
 
-Round caps and the context guard override the stopping rule in both directions.
-When they end an interview with Missing categories, those categories ship as
-`[NEEDS CLARIFICATION]` at section level and the final report says so.
+The round cap overrides the stopping rule. When two rounds end with a category
+still Missing, it gets one deferred question of its own, `Q<n> <category>: not
+covered by the input`, so it ships under Open questions like any other. The
+category stays `Missing` in the table, and the final report says so and says
+that fuller input would close it.
 
 ## Scoring honestly
 
 The failure mode is not mis-scoring, it is **copying last round's table and
 nudging one row.** Two habits prevent it:
 
-- Score each category by naming the decision that is still unmade. If you cannot
-  name one, it is not Partial — it is Clear.
-- A category that has not moved in two rounds is either blocked behind a
-  dependency (say which) or genuinely done (score it Clear). "Still Partial" with
-  no reason for a third round is a scoring failure, not a coverage finding.
+- Score each category by naming the decision that is still unmade, in the note
+  under the table. If you cannot name one, it is not Partial — it is Clear.
+- A category that did not move in a round is either blocked behind a dependency
+  (say which) or genuinely done (score it Clear). "Still Partial" with no reason
+  is a scoring failure, not a coverage finding.

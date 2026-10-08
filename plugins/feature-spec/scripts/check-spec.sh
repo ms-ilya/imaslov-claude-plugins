@@ -22,7 +22,8 @@ usage: check-spec.sh <path-to-spec.md> --tree <path-to-tree.md> [options]
   --prev <path>     The spec being amended, to catch a silent renumber.
   --allow-reword    Accept text changed under an existing identifier. Without it
                     a reword is a failure, because it is indistinguishable from
-                    a renumber for any reader who was not present.
+                    a renumber for any reader who was not present. A statement
+                    that moved to another identifier fails either way.
 USAGE
 }
 
@@ -66,11 +67,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 out=$(PYTHONPATH="$HERE/lib" python3 - "$SPEC" "$TREE" "$PREV" "$ALLOW_REWORD" "$CLOSED" <<'PY'
 import re,sys,os
-from record import Record, Spec, tag_sources, resolve_tag, DEF_HEADS, SCEN_HEADS
+from record import (Record, Spec, tag_sources, resolve_tag, DEF_HEADS, SCEN_HEADS,
+                    SCOPE_HEADS, CONSTRAINT_HEADS, WITHDRAWN, FACT_VERDICT)
 
 spec=Spec.load(sys.argv[1])
 rec=Record.load(sys.argv[2])
-prev=open(sys.argv[3]).read() if sys.argv[3] and os.path.isfile(sys.argv[3]) else None
+prev=Spec.load(sys.argv[3]) if sys.argv[3] and os.path.isfile(sys.argv[3]) else None
 allow_reword=sys.argv[4]=='1'
 # Closed-world: assert only about content that is present. Never about absence.
 closed=sys.argv[5]=='1'
@@ -87,42 +89,62 @@ def bad(m,expected=None):
 def note(m):
     global warn; print(f"WARN  {m}"); warn+=1
 def ok(m): print(f"ok    {m}")
+def finish():
+    print()
+    mode=' (closed-world)' if closed else ''
+    if fail==0:
+        print(f"SPEC OK{mode}{f' ({warn} warning(s))' if warn else ''}"); sys.exit(0)
+    print(f"{fail} PROBLEM(S) — fix before writing"); sys.exit(1)
 
 TAG_SHAPE=("FR-001  The importer resumes from the last checkpoint on restart.\n"
            "        ← Settled Q1\n"
            "valid sources: Settled Q<n> | Grounding fact <n> | Strategy (chosen) | "
-           "Principle: <file> | ADR-<id> | a ## Reads file\n"
+           "Principle: <file> | ADR-<id>\n"
            "a tag may name several, comma separated: ← Settled Q2 (r1), Grounding fact 7")
+SECTIONS=("## User stories | Requirements | Success criteria | Acceptance scenarios | "
+          "Out of scope | Implementation constraints | Chosen approach | "
+          "Principle deviations | Clarifications | Open questions")
+
+# ---- the sections are the template's, each once --------------------------
+# A statement under a heading nobody defined is read by no check below and is
+# left out of the critic's packet, so it would ship unexamined.
+for head,n in spec.unknown_sections():
+    bad(f"line {n}: '{head}' is not a section of the spec template — what sits under it is checked by nothing",
+        SECTIONS)
+for name in spec.repeated_sections():
+    bad(f"the spec has more than one '{name}' section — only the first is read",
+        "one section per heading")
 
 def_spans  = spec.spans(DEF_HEADS)
 scen_spans = spec.spans(SCEN_HEADS)
 
 if not def_spans and closed:
-    print("ok    nothing asserted yet — no requirement sections to check")
-    print(); print("SPEC OK (closed-world)"); sys.exit(0)
+    if fail==0: print("ok    nothing asserted yet — no requirement sections to check")
+    finish()
 if not def_spans:
     bad("no '## Requirements' or '## Success criteria' section — is this a drafted spec?",
         "## Requirements\nFR-001  <one testable statement of behaviour>\n        ← Settled Q1")
-    print(); print("1 PROBLEM(S) — fix before writing"); sys.exit(1)
+    finish()
 
 items=spec.items()                 # (id, text, tagline or None, lineno)
 
-# ---- nothing in a definition section names an id the parser could not read --
-orphans=spec.unparsed_identifiers()
-if orphans:
-    for n,txt in orphans:
-        bad(f"line {n} names an identifier the checker could not parse as a definition: '{txt}'")
-    bad("unparsed identifiers mean the checks below examined less than the whole spec",
-        "FR-001  <statement>   — each on its own line")
+# ---- every line of a requirement section belongs to an identified item ----
+# A bullet with no FR/SC number, or a line after an item's tag, asserts
+# something no tag covers.
+strays=spec.stray_lines()
+if strays:
+    for n,txt in strays:
+        bad(f"line {n} in a requirement section belongs to no identifier: '{txt}'",
+            "FR-00N  <statement>, its ← tag on the line below; a longer statement continues on indented lines")
 else:
-    ok("every identifier in the requirement sections parsed")
+    ok("every line in the requirement sections belongs to an identified statement")
 
 if not items and closed:
-    print("ok    no identifiers asserted yet")
-    print(); print("SPEC OK (closed-world)"); sys.exit(0)
+    if fail==0: print("ok    no identifiers asserted yet")
+    finish()
 if not items:
     bad("requirement sections contain no FR-NNN or SC-NNN identifiers", TAG_SHAPE)
-    print(); print(f"{fail} PROBLEM(S) — fix before writing"); sys.exit(1)
+    finish()
 
 frs=[x for x in items if x[0].startswith('FR')]
 scs=[x for x in items if x[0].startswith('SC')]
@@ -131,7 +153,7 @@ if not frs and not skip_if_closed("requirements present"):
     bad("no FR-NNN requirements found — a spec with no requirements is not a spec")
 
 # ---- R10: every statement carries a source tag ---------------------------
-withdrawn={i for i,t,_,_ in items if 'withdrawn' in t.lower()}
+withdrawn={i for i,t,_,_ in items if WITHDRAWN.search(t)}
 marked  ={i for i,t,_,_ in items if 'NEEDS CLARIFICATION' in t}
 exempt=withdrawn|marked
 
@@ -150,6 +172,18 @@ else:
 # Shape-checking a citation is the check a fabricated citation passes, and
 # resolving only the first source in a tag is the check the second one passes.
 # A tag naming three sources is three citations, and all three are looked up.
+facts=rec.grounding_facts()
+def unusable(src):
+    """Why this source cannot carry a statement, or None."""
+    why=resolve_tag(src, rec)
+    if why: return why
+    f=re.match(r'Grounding fact\s+(\d+)$', src)
+    v=FACT_VERDICT.search(facts.get(f.group(1),'')) if f else None
+    if v and v.group(1).lower()=='unverifiable':
+        return ("the record grades that claim unverifiable, so it is not a fact: "
+                "what depends on it is an open question")
+    return None
+
 unresolved=[]
 n_sources=0
 for i,t,tag,n in items:
@@ -160,7 +194,7 @@ for i,t,tag,n in items:
         continue
     n_sources+=len(srcs)
     for src in srcs:
-        why=resolve_tag(src, rec)
+        why=unusable(src)
         if why:
             unresolved.append((i,n,src,why))
 
@@ -171,8 +205,37 @@ if unresolved:
         "every source named in every tag must exist in the design record")
 else:
     ok(f"all {n_sources} source(s) across {len(items)} tag(s) resolve to the design record "
-       f"({len(rec.settled_ids())} settled, {len(rec.grounding_facts())} grounding facts, "
+       f"({len(rec.settled_ids())} settled, {len(facts)} grounding facts, "
        f"{len(rec.adr_ids())} ADRs)")
+
+# ---- tags outside the requirement sections resolve too ------------------
+# An out-of-scope line and an implementation constraint cite the record as well.
+# Leaving those tags unchecked would make them the one place in the spec where
+# a fabricated citation is free.
+item_tag_lines=spec.item_tag_lines()
+other_bad=[]; n_other=0
+for ln,line in spec.all_tags():
+    if ln in item_tag_lines: continue
+    for src in tag_sources(line):
+        n_other+=1
+        why=unusable(src)
+        if why: other_bad.append((ln,src,why))
+if other_bad:
+    for ln,src,why in other_bad:
+        bad(f"line {ln} cites '{src}' but {why} — a source tag that does not resolve is a fabricated citation")
+elif n_other:
+    ok(f"all {n_other} source(s) cited outside the requirement sections resolve")
+
+# ---- a scope line and a constraint are decisions, so each carries its tag --
+loose=[(n,label) for names,label in ((SCOPE_HEADS,'## Out of scope'),
+                                     (CONSTRAINT_HEADS,'## Implementation constraints'))
+       for n,text in spec.bullets(names) if '←' not in text]
+if loose:
+    for n,label in loose:
+        bad(f"line {n} under {label} has no source tag — it states a decision, so it names the one it came from",
+            "- <the line> ← Settled Q<n>")
+elif spec.bullets(SCOPE_HEADS) or spec.bullets(CONSTRAINT_HEADS):
+    ok("every out-of-scope line and implementation constraint carries a source tag")
 
 # ---- identifiers unique, and not renumbered ------------------------------
 seen={}
@@ -184,37 +247,52 @@ else:
     for k,v in dup.items(): bad(f"{k} defined {len(v)}x (lines {v})")
 
 if prev:
-    old=dict(re.findall(r'^\s*(?:[-*+]\s+)?\*{0,2}((?:FR|SC)-\d+[a-z]?)\*{0,2}\s*[:—–-]?\s+(.{0,60})',
-                        prev, re.M))
-    new=dict((i,t[:60]) for i,t,_,_ in items)
-    moved=[i for i in old if i in new and old[i].strip()[:40] != new[i].strip()[:40]
-           and 'withdrawn' not in new[i].lower()]
+    def norm(t): return re.sub(r'\s+',' ',t).strip()
+    old={i:norm(t) for i,t,_,_ in prev.items()}
+    new={i:norm(t) for i,t,_,_ in items}
+    owner={}
+    for i,t in old.items(): owner.setdefault(t,i)
+    changed=[i for i in old if i in new and old[i]!=new[i] and not WITHDRAWN.search(new[i])]
+    # A statement that turns up under another identifier is a renumber, and no
+    # flag excuses it: every reference to the old number now points elsewhere.
+    renumbered=[(i,owner[new[i]]) for i in changed if owner.get(new[i],i)!=i]
+    reworded=[i for i in changed if i not in {a for a,_ in renumbered}]
     dropped=[i for i in old if i not in new]
+    for i,was in renumbered:
+        bad(f"{i} now carries the statement {was} had — identifiers were renumbered",
+            "an identifier keeps its statement; a new statement takes the next free number")
     # A reword under a stable identifier is indistinguishable from a renumber to
-    # anyone who was not in the room. The rubric calls a moved identifier blocking;
-    # a warning inside a fix-until-clean loop is a finding nobody reads.
-    if moved:
+    # anyone who was not in the room, so it fails until it is acknowledged.
+    if reworded:
         if allow_reword:
-            note(f"text changed under existing identifiers ({', '.join(moved[:5])}) — accepted via --allow-reword")
+            note(f"text changed under existing identifiers ({', '.join(reworded[:5])}) — accepted via --allow-reword")
         else:
-            bad(f"text changed under existing identifiers: {', '.join(moved[:5])}",
+            bad(f"text changed under existing identifiers: {', '.join(reworded[:5])}",
                 "keep the wording, or re-run with --allow-reword to record the edit as deliberate")
     if dropped: bad(f"identifiers vanished rather than being marked withdrawn: {', '.join(dropped[:5])}",
                     "FR-007  <original statement> (withdrawn)")
-    if not moved and not dropped: ok("identifiers stable against the previous draft")
+    if not changed and not dropped: ok("identifiers stable against the previous spec")
 
 # ---- every FR has an acceptance scenario ---------------------------------
+# A scenario is keyed by the identifier that opens its line. A requirement that
+# is only mentioned in a sentence has not been given a scenario.
+scen=spec.scenario_ids()
+defined={i for i,_,_,_ in frs}
+for i,n in scen:
+    if i not in defined:
+        bad(f"line {n}: a scenario is keyed to {i}, which the spec does not define")
 if skip_if_closed("acceptance scenario per requirement"):
     pass
 elif not scen_spans:
     bad("no ## Acceptance scenarios section",
         "## Acceptance scenarios\nFR-001  Given <state>, when <action>, then <observable result>.")
 else:
-    body=spec.scenarios_body()
-    nocov=[i for i,_,_,_ in frs if i not in exempt and i not in body]
+    have={i for i,_ in scen}
+    nocov=[i for i,_,_,_ in frs if i not in exempt and i not in have]
     ok("every requirement has an acceptance scenario") if not nocov \
         else bad(f"requirements with no acceptance scenario: {', '.join(nocov)}",
                  "FR-00N  Given <state>, when <action>, then <observable result>.")
+    body=spec.scenarios_body()
     if 'Given' not in body or 'hen' not in body:
         note("acceptance scenarios do not read as Given/When/Then")
 
@@ -253,6 +331,57 @@ if bare: bad(f"{bare} bare [NEEDS CLARIFICATION] marker(s) with no reason",
              "[NEEDS CLARIFICATION: per-source overrides — low impact, deferred to post-launch]")
 n_ok=len(spec.open_markers())
 if n_ok: ok(f"{n_ok} clarification marker(s), each with a reason")
+# One deferred question is one marker. Every marker is counted here and carried
+# into the plan as its own open question, so a question marked inline and again
+# under ## Open questions reads downstream as two.
+opens={}
+for m in spec.open_markers():
+    q=re.match(r'\s*(Q\d+)\b', m)
+    if q: opens[q.group(1)]=opens.get(q.group(1),0)+1
+# A tagged statement was decided; an inline marker says nobody decided it. Both
+# on one line is how a deferred question ends up marked a second time, in words
+# that match nothing under ## Open questions.
+both=[(i,n) for i,t,tag,n in items if tag and 'NEEDS CLARIFICATION' in t]
+for i,n in both:
+    bad(f"{i} (line {n}) carries both a source tag and an inline marker — a decided statement that waits on a deferred question names the question id in words",
+        "FR-007  <statement> (the value is open: see Q17)\n        ← Settled Q5")
+# The id is what makes the rule above checkable, so a marker under
+# ## Open questions that does not open with one is malformed, not merely terse.
+oq=spec.section_text('open questions') or ''
+oq_markers=re.findall(r'\[NEEDS CLARIFICATION:\s*(.*?)\]', oq, re.S)
+anon=[m for m in oq_markers if not re.match(r'\s*Q\d+\b', m)]
+if anon:
+    bad(f"{len(anon)} marker(s) under ## Open questions name no question id: '{anon[0].strip()[:50]}'",
+        "[NEEDS CLARIFICATION: Q12 — per-source overrides, deferred to post-launch]")
+twice=sorted(k for k,v in opens.items() if v>1)
+if twice:
+    bad(f"{', '.join(twice)} marked [NEEDS CLARIFICATION] more than once — one deferred question is one marker",
+        "the marker once, under ## Open questions; a requirement that depends on it names the question id in words")
+# A marker and the record's ## Deferred list are the same set of questions. One
+# the record never deferred is an open question nobody raised; one the record
+# deferred and the spec does not carry has been quietly dropped.
+deferred=[d['id'] for d in rec.deferred_entries()]
+settled_ids=rec.settled_ids()
+for q in sorted(opens, key=lambda k:int(k[1:])):
+    if q not in deferred:
+        bad(f"a marker names {q}, which the record does not defer"
+            + (" — the record settled it" if q in settled_ids else ""),
+            "a marker for each question under the record's ## Deferred, and for no other")
+carried={m.group(1) for t in oq_markers for m in [re.match(r'\s*(Q\d+)\b', t)] if m}
+missing=[q for q in deferred if q not in carried]
+if missing and not skip_if_closed("every deferred question is carried as a marker"):
+    bad(f"deferred in the record but not carried under ## Open questions: {', '.join(missing)}",
+        "## Open questions\n- [NEEDS CLARIFICATION: Q12 — <what was deferred, and why>]")
+elif deferred and not missing:
+    ok(f"all {len(deferred)} deferred question(s) are carried as markers")
+
+# ---- the clarifications index points at settled questions -----------------
+ghosts=[m.group(1) for m in re.finditer(r'^\s*[-*+]\s+\*{0,2}(Q\d+)\b',
+                                        spec.section_text('clarifications') or '', re.M)
+        if m.group(1) not in settled_ids]
+if ghosts:
+    bad(f"## Clarifications lists {', '.join(ghosts)}, which the record never settled",
+        "one line per ## Settled entry, copied from the record")
 
 # ---- P1 is a shippable slice ---------------------------------------------
 if closed:
@@ -262,19 +391,17 @@ elif spec.stories():
 else:
     note("no P1 story found — priorities come from the design record's [P1] tags")
 
-print()
-mode=' (closed-world)' if closed else ''
-if fail==0: print(f"SPEC OK{mode}{f' ({warn} warning(s))' if warn else ''}"); sys.exit(0)
-print(f"{fail} PROBLEM(S) — fix before writing"); sys.exit(1)
+finish()
 PY
 )
 status=$?
 
-# 0 = clean, 1 = findings the checker reported. Anything else means it never ran,
-# and a checker that did not run must not read as a pass.
-if [ "$status" -gt 1 ]; then
+# 0 = clean, 1 = findings the checker reported. A crash also exits 1, with no
+# result line, and a checker that did not reach a verdict must not read as a
+# list of findings or as a pass.
+if [ "$status" -gt 1 ] || ! printf '%s\n' "$out" | grep -qE '^(SPEC OK|[0-9]+ PROBLEM)'; then
   [ -n "$out" ] && echo "$out"
-  echo "FAIL  checker did not run to completion (python3 exited $status)"
+  echo "FAIL  checker did not reach a verdict (python3 exited $status)"
   exit 2
 fi
 

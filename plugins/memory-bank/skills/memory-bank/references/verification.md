@@ -1,6 +1,6 @@
 # Verification Procedure
 
-This procedure is **mandatory** for every Memory Bank write operation. Never skip it.
+Run this procedure for every Memory Bank write. Readers trust this documentation without re-checking it, so an unverified claim does more harm than a missing one.
 Run verification **after writing each file**, not after writing all files — this prevents narrative anchoring where early assumptions propagate unchecked across documents.
 
 ---
@@ -10,7 +10,7 @@ Run verification **after writing each file**, not after writing all files — th
 The verification pass catches hallucinations before they enter documentation.
 Every claim in a Memory Bank file must be traceable to actual source code.
 
-**Key principle:** Use Claude Code's dedicated tools (`Grep`, `Glob`, `Read`) for all verification — not bash `grep`/`find`/`test`. Dedicated tools have structured output that cannot be fabricated, while bash commands can fail silently or produce ambiguous results.
+**Key principle:** Every verdict comes from a search or a read run in this session, never from memory. Use the Grep and Glob tools where the session has them; on macOS and Linux the main session has neither, so use `grep` and `find` through Bash there. Wherever this procedure names `Grep` or `Glob`, either form counts. Read a search's output before concluding: an empty result from a mistyped pattern looks the same as a genuine absence.
 
 ---
 
@@ -118,7 +118,7 @@ Do not paper over knowledge gaps with INFERRED flags.
 
 ---
 
-## Verification Summary (MANDATORY Output)
+## Verification Summary
 
 After verifying each file, output a verification summary in the conversation (not in the docs):
 
@@ -130,7 +130,7 @@ Verified: <filename>
 - INFERRED rate: X% (must be ≤30%)
 ```
 
-This summary is how the user confirms verification actually ran. Never skip it.
+This summary is how the user confirms verification actually ran, so output it for every file.
 
 ---
 

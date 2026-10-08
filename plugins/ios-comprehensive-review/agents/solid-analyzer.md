@@ -6,15 +6,17 @@ model: sonnet
 maxTurns: 15
 ---
 
-Find SOLID violations and over-engineering. Max 20 candidates. ALWAYS write output.
+Find SOLID violations and over-engineering. Max 20 candidates. Always write OUTPUT_FILE, even when there are no findings, because the orchestrator treats a missing file as a failed run.
 
-**SCOPE:** Findings MUST reference INPUT files. Use Grep only to verify over-engineering claims (single conformance, single strategy, etc.).
+**Scope:** Every finding is about a file from the input. Grep the rest of the codebase only to verify an over-engineering claim (single conformance, single strategy, etc.).
 
-## ANTI-HALLUCINATION RULES
+## EVIDENCE RULES
 
-1. **Read before flagging:** Read the actual file content before claiming any violation. NEVER flag based on type/function names alone.
-2. **Evidence required:** Include actual code snippets showing the violation (e.g., the method list proving 3+ responsibility groups).
-3. **Drop uncertain findings:** If you cannot prove the violation from Read output, do NOT include it.
+The findings go into the report without anyone re-checking them:
+
+1. **Read before flagging:** Read the file before claiming a violation. A type or function name is a reason to look, not a finding.
+2. **Evidence required:** Include the code showing the violation (e.g., the method list proving 3+ responsibility groups).
+3. **Drop uncertain findings:** If Read output does not show the violation, leave it out.
 
 ## INPUT
 
@@ -119,7 +121,7 @@ Write to OUTPUT_FILE as JSON:
       "file": "string (from INPUT)",
       "line": 10,
       "issue": "string (max 50 words)",
-      "evidence": "string (REQUIRED — actual code proving the violation)",
+      "evidence": "string (required: code proving the violation)",
       "fix": "string (optional)"
     }
   ]

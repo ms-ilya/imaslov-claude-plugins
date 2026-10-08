@@ -124,8 +124,10 @@ Three specifics that change what a spec can promise, each cheap to check:
 
 ## How to ask for these
 
-Give the fact-finder the questions above **verbatim and numbered**, plus the
-scope path. Ask for the nearest instance to the feature, not a survey — "which
+Give the fact-finder the questions above that this feature could turn on,
+numbered, each with what its row says to look for, plus the scope path when
+there is one. A question that cannot bear on the feature is not sent. Ask for
+the nearest instance to the feature, not a survey — "which
 provider owns the cart state and where is it created" beats "describe the state
 management architecture", which returns an essay nobody can cite.
 

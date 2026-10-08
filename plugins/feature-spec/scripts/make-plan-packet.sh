@@ -15,13 +15,17 @@ usage: make-plan-packet.sh <plan-dir> --spec <spec.md> --tree <tree.md> [--lens 
                  Emits only that lens's rubric section and gives the lens its
                  own finding-id prefix. Use when lenses run in parallel and
                  would otherwise all number their findings B1.
-  --out <path>   Write to a file instead of stdout. Pass - for stdout.
+  --out <path>   Write to a file instead of stdout. Pass - for stdout. The
+                 convention is <specdir>/.work/plan-critic-packet.md: a `.work`
+                 directory is created with an ignore file of its own.
+  --pass1 <path> The first pass's saved reply. Its blocking findings are added
+                 to the packet, so a second pass can say what became of each.
 
 Exit 0 written · 2 could not run.
 USAGE
 }
 
-DIR=""; SPEC=""; TREE=""; LENS=""; OUT="-"
+DIR=""; SPEC=""; TREE=""; LENS=""; OUT="-"; PASS1=""
 while [ $# -gt 0 ]; do
   case "$1" in
     -h|--help) usage; exit 0 ;;
@@ -29,6 +33,7 @@ while [ $# -gt 0 ]; do
     --tree) [ $# -ge 2 ] || { echo "FAIL  --tree needs a path"; exit 2; }; TREE="$2"; shift 2 ;;
     --lens) [ $# -ge 2 ] || { echo "FAIL  --lens needs a name"; exit 2; }; LENS="$2"; shift 2 ;;
     --out)  [ $# -ge 2 ] || { echo "FAIL  --out needs a path"; exit 2; };  OUT="$2";  shift 2 ;;
+    --pass1) [ $# -ge 2 ] || { echo "FAIL  --pass1 needs a path"; exit 2; }; PASS1="$2"; shift 2 ;;
     -*) echo "FAIL  unknown option: $1"; usage; exit 2 ;;
     *) [ -z "$DIR" ] || { echo "FAIL  unexpected extra argument: $1"; exit 2; }; DIR="$1"; shift ;;
   esac
@@ -40,6 +45,10 @@ done
 [ -f "$SPEC" ] || { echo "FAIL  spec not found: $SPEC"; exit 2; }
 [ -z "$TREE" ] && { echo "FAIL  --tree is required — the principles the plan is held to live there"; exit 2; }
 [ -f "$TREE" ] || { echo "FAIL  design record not found: $TREE"; exit 2; }
+if [ -n "$PASS1" ] && [ ! -f "$PASS1" ]; then
+  echo "FAIL  first pass not found: $PASS1"
+  exit 2
+fi
 case "$LENS" in
   ""|coverage|sequencing|honesty) ;;
   *) echo "FAIL  unknown lens: $LENS"; echo "      one of: coverage, sequencing, honesty"; exit 2 ;;
@@ -50,13 +59,14 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUBRIC="$HERE/../skills/feature-spec/references/plan-rubric.md"
 [ -f "$RUBRIC" ] || { echo "FAIL  plan rubric not found: $RUBRIC"; exit 2; }
 
-PYTHONPATH="$HERE/lib" python3 - "$DIR" "$SPEC" "$TREE" "$RUBRIC" "$LENS" "$OUT" <<'PY'
+PYTHONPATH="$HERE/lib" python3 - "$DIR" "$SPEC" "$TREE" "$RUBRIC" "$LENS" "$OUT" "$PASS1" <<'PY'
 import os, re, sys
 from record import Record, Spec, Plan, load_tasks, _bullets, _placeholder
 
 plandir, specpath, treepath = sys.argv[1], sys.argv[2], sys.argv[3]
 rubric = open(sys.argv[4]).read()
 lens, out = sys.argv[5], sys.argv[6]
+pass1 = open(sys.argv[7]).read() if sys.argv[7] else None
 
 plan = Plan.load(os.path.join(plandir, 'plan.md'))
 spec = Spec.load(specpath)
@@ -158,6 +168,10 @@ part("Enabling work — tasks no requirement asked for",
      "\n".join(f"- {b}" for b in _bullets(plan.section('Enabling work'))),
      "the plan declares no enabling work")
 
+part("Implementation constraints the spec fixes — given, not the plan's to decide",
+     spec.section_text('implementation constraints'),
+     "the spec fixes nothing about how this is built")
+
 part("Plan assumptions — decisions the spec did not settle",
      "\n".join(f"- {text}" for text, _cost in plan.assumptions()),
      "the plan declares no assumptions. The spec names no type, library or "
@@ -190,6 +204,20 @@ L.append("")
 
 part("Promoted ADRs the plan must not contradict", rec.section('Promoted to ADR'),
      "no decision was promoted for this feature")
+
+# ---- what the first pass found ------------------------------------------
+# A second pass runs in fresh context. It can only say whether B1 was fixed if
+# it is told what B1 was.
+if pass1 is not None:
+    m = re.search(r'^BLOCKING[ \t]*$(.*?)(?=^(?:[A-Z][A-Z ]*[A-Z]|[A-Z]+)[ \t]*$|\Z)',
+                  pass1, re.M | re.S)
+    part("Findings from the first pass", (m.group(1) if m else ''),
+         "the first pass raised nothing blocking")
+    L.append("The plan was revised after these. Add a RECONCILIATION section with one")
+    L.append("line for each id above: `- B1 fixed` or `- B2 not fixed — <why>`. A finding")
+    L.append("that is not fixed keeps the verdict at fix-first. Number a new blocking")
+    L.append("finding after the highest id above.")
+    L.append("")
 
 # ---- the rubric, inline --------------------------------------------------
 L.append("---")
@@ -224,6 +252,15 @@ body = "\n".join(L).rstrip() + "\n"
 if out == '-':
     sys.stdout.write(body)
 else:
+    # A packet is working state: only the critic reads it, and nothing reads it
+    # after the run. Written under `.work/`, it is kept out of version control
+    # by an ignore file of its own, so nothing has to delete it afterwards.
+    parent = os.path.dirname(os.path.abspath(out))
+    os.makedirs(parent, exist_ok=True)
+    ignore = os.path.join(parent, '.gitignore')
+    if os.path.basename(parent) == '.work' and not os.path.exists(ignore):
+        with open(ignore, 'w') as fh:
+            fh.write("*\n")
     with open(out, 'w') as fh:
         fh.write(body)
     print(f"wrote {out}")

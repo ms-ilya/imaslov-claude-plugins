@@ -2,7 +2,9 @@
 
 Audits a native iOS Xcode project for App Store rejection risks. Read-only: it
 modifies nothing that was already in the project, and creates exactly one file —
-its report.
+its report. That is checked, not only promised: the audit records the project's
+file list when it starts and, before it finishes, lists every file created,
+changed or deleted since, other than the report.
 
 ```
 /appstore-guideline-auditor:appstore-audit ~/Projects/MyApp
@@ -27,8 +29,10 @@ and a fact look identical.
 numbers: 2.5.10 is now marked *intentionally omitted*, and Push Notifications
 moved from 4.5.5 to 4.5.4 — 4.5.5 is Game Center Player IDs today. A rule
 cannot enter the catalogue until its number resolves against Apple's text, and
-at run time each audit resolves Apple's current guidelines and policy pages by
-search and re-checks against those.
+at run time each audit resolves Apple's current guidelines page by search and
+re-checks every cited number against it. Policy pages are fetched too, but no
+check reads them: a regional or dated requirement is reported with its policy
+source marked retrieved, not verified.
 
 **Every target, separately.** ITMS-91053 is evaluated per target by an automated
 scanner. A widget extension is a separate product from Apple's side, and an
@@ -80,17 +84,17 @@ skills/           the orchestrator and its detection references
 
 Everything here runs during an audit. Nothing in the installed plugin exists
 only to check the plugin itself — the regression fixtures that guard the
-collector and the two validators are maintainer tooling and live outside the
-plugin, in `.dev/` at the root of this repository.
+collector and the two validators are maintainer tooling and are not
+distributed with this repository.
 
 ## The catalogue gate
 
 ```bash
-bash scripts/check-catalogue.sh                       # shape and patterns
-APPSTORE_GUIDELINE_TEXT=apple.md bash scripts/check-catalogue.sh   # and citations
+bash scripts/check-catalogue.sh                              # shape and patterns
+bash scripts/check-catalogue.sh --guideline-text apple.md    # and citations
 ```
 
-Without the environment variable it checks what needs no network: every rule
+Without `--guideline-text` it checks what needs no network: every rule
 record is well-formed and closed, every id unique across categories, every
 detection pattern compiles, and every `guidance` slug resolves to a section that
 exists in `detection-<category>.md`. A pattern that does not compile is a rule
@@ -100,8 +104,13 @@ matches — so it is checked rather than assumed.
 With it, the audit's Phase 1 points the same script at the text it just
 retrieved from Apple, and any rule whose number no longer resolves — or now
 resolves to a clause marked *intentionally omitted* — is withheld from that run
-rather than cited wrongly. There is no vendored snapshot of Apple's text: the
-only copy that can be current is the one fetched on the day of the run.
+rather than cited wrongly. That is the whole check: it does not compare what a
+clause says with what the rule claims, so a number Apple has reused for a
+different clause still passes. A text that cannot be the whole page — fewer
+clause numbers than the catalogue cites, or none in a cited section — is not
+judged at all, and the run's citations are reported as unverified. There is no
+vendored snapshot of Apple's text: the only copy that can be current is the one
+fetched on the day of the run.
 
 ## Design notes
 
@@ -189,12 +198,10 @@ answers each by demonstration rather than by decree:
 
 ## Attribution
 
-This plugin is derived from four MIT-licensed upstream App Store review skills.
-Each is kept read-only under `.research/appstore-sources/` in this repo as the
-derivation record, pinned to the commit named in its `PROVENANCE.txt`, alongside
-each source's `LICENSE`. That record is not part of the installed plugin and no
-shipped script reads it; anything pruned from it can be fetched back from the
-upstream repository at the pinned revision.
+This plugin is derived from four MIT-licensed upstream App Store review skills,
+each pinned to the commit in the table below. No copy of them is distributed
+with this repository and no shipped script reads one; each can be fetched from
+its upstream repository at the pinned revision.
 
 The merge is not a copy: rules were re-authored with executable detection
 patterns (no upstream source ships any — the largest source states detection as
@@ -209,5 +216,5 @@ Apple's own text, which contradicts two of the four sources on Guideline 4.8.
 | Copyright (c) 2026 devsemih | [devsemih/appstore-review-skill](https://github.com/devsemih/appstore-review-skill) | `ab77bb7` (2026-07-13) | The verbatim Apple guideline text the citations were first anchored against; the cross-platform framework table |
 | Copyright (c) 2026 safaiyeh | [safaiyeh/app-store-review-skill](https://github.com/safaiyeh/app-store-review-skill) | `3878420` (2026-08-29) | The 2026 regional and dated policy layer and its sources; the correct reading of Guideline 4.8 |
 
-Each upstream repository is MIT licensed and each retains its own `LICENSE` file
-in the vendored copy.
+Each upstream repository is MIT licensed and carries its own `LICENSE` file at
+the pinned commit.

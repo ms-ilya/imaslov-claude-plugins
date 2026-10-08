@@ -86,8 +86,8 @@ copy supplied through `APPSTORE_GUIDELINE_TEXT`, which the audit fills from what
 it fetched in Phase 1; with nothing supplied it reports citation resolution as
 *skipped* rather than falling back. A pinned copy cannot reach a clause
 renumbered after release, and a stale anchor is worse than an absent one because
-it makes a drifted citation look verified. The `.research/` corpus remains in the
-repository as the derivation record only, and no shipped script reads it.
+it makes a drifted citation look verified. The `.research/` corpus is the
+derivation record only: it is not distributed, and no shipped script reads it.
 
 **Q15 — a fetch failure degrades the run, it does not fail it.** The audit
 completes with every citation recorded `unverified` **per source**, and the

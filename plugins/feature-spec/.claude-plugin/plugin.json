@@ -1,15 +1,17 @@
 {
   "name": "feature-spec",
-  "description": "Bounded, resumable requirements interview that ends in a critic-verified spec, then turns that spec into a checked implementation plan. Coverage-tracked rounds, strategy selection, glossary and ADRs, tasks joined to requirements in both directions.",
-  "version": "1.1.0",
+  "description": "Turns what you already have — a brief, a document, an idea — into a critic-verified spec, asking only about what is still unclear, then turns that spec into a checked implementation plan. Coverage-tracked intake, strategy selection, glossary and ADRs, tasks joined to requirements in both directions.",
+  "version": "2.0.1",
   "author": {
     "name": "Ilya"
   },
+  "repository": "https://github.com/ms-ilya/imaslov-claude-plugins",
+  "license": "MIT",
   "keywords": [
     "spec",
     "planning",
     "requirements",
-    "interview",
+    "intake",
     "adr",
     "glossary",
     "tasks",

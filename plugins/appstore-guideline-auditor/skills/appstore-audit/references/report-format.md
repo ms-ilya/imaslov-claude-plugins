@@ -29,13 +29,13 @@ Guideline 5.1.1 · rule `privacy-manifest-absent`
 <what is wrong, one or two sentences>
 
 **Evidence** — `CleanWidget/Info.plist`
-> no PrivacyInfo.xcprivacy in the CleanWidget target
+> no PrivacyInfo.xcprivacy anywhere in the project (`privacy_manifest_source: none-in-project`)
 
 **Resolve by** — either:
 - Add a PrivacyInfo.xcprivacy to the CleanWidget target
 - Declare an empty NSPrivacyAccessedAPITypes array if it reaches no required-reason API
 
-**Applies to** — Brazil storefront, from June 2026 · verified against the policy source
+**Applies to** — Brazil storefront, from June 2026 · policy source retrieved, not checked
 
 #### [warning · PROBABLE] <rule title>
 ...
@@ -58,16 +58,26 @@ Omit this section when empty.
   marks intentionally omitted.
 - `usage-description-missing` — needs CleanWidget's Info.plist, which was not
   read (`info_plist_source: unresolved`). Absence could not be established.
+- `safety` — the category did not run: its findings file failed validation
+  twice (`findings[0]: missing required field 'evidence'`).
 ```
 
 ## Rules for the body
 
-**Verdict line.** `READY` with no critical and no warning findings.
-`LIKELY READY — N warning(s) to review` with warnings but no critical.
-`NOT READY — N critical finding(s)` with any critical. Append
+**Verdict line.** `NOT READY — N critical finding(s)` with any critical.
+Otherwise `INCOMPLETE — <categories> did not run` when a rule category's
+findings were missing or failed validation, because rules nobody evaluated
+cannot be reported as passed. Otherwise `LIKELY READY — N warning(s) to review`
+with warnings, and `READY` with neither. A `NOT READY` verdict from a run with a
+missing category carries `· <categories> did not run`. Append
 `· citations unverified this run` when any source went unverified, and
-`· degraded scan` when anything the collector needed could not be read. Both
+`· degraded scan` when anything the collector needed could not be read. The
 suffixes exist so the verdict cannot read stronger than the run that produced it.
+
+**Citation states are printed in their own words.** `verified` means the cited
+guideline number exists in Apple's text retrieved on this run and is not marked
+intentionally omitted. A policy source is `retrieved` at most, and is printed
+as retrieved.
 
 **A withheld rule is not a passed rule.** Where rules were withheld, the verdict
 also carries `· N rule(s) withheld`, because `READY` with four rules withheld is

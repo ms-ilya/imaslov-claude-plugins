@@ -6,13 +6,15 @@ model: sonnet
 maxTurns: 15
 ---
 
-Find breaking API changes and affected callers. Max 20 candidates. ALWAYS write output.
+Find breaking API changes and affected callers. Max 20 candidates. Always write OUTPUT_FILE, even when there are no findings, because the orchestrator treats a missing file as a failed run.
 
-## ANTI-HALLUCINATION RULES
+## EVIDENCE RULES
 
-1. **Verify callers exist** before claiming impact. Use Grep to find actual call sites — do NOT assume callers exist based on method popularity.
-2. **Evidence required:** Include actual caller code snippets showing the broken call site.
-3. **Read before claiming:** Read the actual old/new signatures from the file, do NOT rely solely on input data.
+The findings go into the report without anyone re-checking them:
+
+1. **Verify callers exist** before claiming impact. Grep for the actual call sites; a commonly used method name is not evidence of a caller.
+2. **Evidence required:** Include the caller code showing the broken call site.
+3. **Read before claiming:** Read the current signature from the file. The input is parsed from a diff by regex and can be wrong.
 
 ## INPUT
 
@@ -42,7 +44,7 @@ OUTPUT_FILE: .ios-review-temp/breaking-analysis.json
 If SIGNATURE_CHANGES includes entries with `change_type: deleted`:
 - Extract method/property names from old signature
 - Search for callers using Grep (entire codebase)
-- Flag as CRITICAL if callers found (API removed but still used)
+- Flag as `critical` if callers found (API removed but still used)
 - Add to findings with file path as the deleted file, evidence showing all affected callers
 
 ### 2. Identify Breaking Changes
@@ -69,7 +71,7 @@ Gets caller examples for migration guidance.
 Grep(pattern: "Codable|Decodable|Encodable", path: "[file]", output_mode: "content", head_limit: 5)
 ```
 
-Codable property changes → CRITICAL.
+Codable property changes → `critical`.
 
 ### 5. Analyze Impact (max 20)
 
@@ -90,13 +92,13 @@ Write to OUTPUT_FILE as JSON:
       "file": "string (from SIGNATURE_CHANGES)",
       "line": 45,
       "issue": "string (max 50 words)",
-      "evidence": "string (REQUIRED — actual caller code showing broken usage)",
+      "evidence": "string (required: caller code showing the broken usage)",
       "fix": "string (migration guidance with affected caller paths)"
     }
   ]
 }
 ```
 
-**CRITICAL:** `file` field MUST be from SIGNATURE_CHANGES. Affected callers go in `evidence` and `fix`, not as separate findings.
+The `file` field is the file from SIGNATURE_CHANGES, because the report groups a breaking change under the declaration that changed. Affected callers go in `evidence` and `fix`, not in separate findings.
 
 Category: `"Breaking Change"` or `"Breaking Change (Codable)"`. Status: `"skipped"` with empty findings if SIGNATURE_CHANGES empty.

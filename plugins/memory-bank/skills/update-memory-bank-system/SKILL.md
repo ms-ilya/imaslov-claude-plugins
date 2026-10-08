@@ -20,9 +20,9 @@ You are refreshing the project-wide Memory Bank documentation — the root-level
 2. If `memory-bank/` doesn't exist → tell the user to run `/init-memory-bank` first
 3. Detect project language by checking for config files at the root (use `Glob`):
    Swift (`Package.swift`, `*.xcodeproj`) · TypeScript (`tsconfig.json`) · Python (`pyproject.toml`, `setup.py`) · Rust (`Cargo.toml`) · Go (`go.mod`) · Kotlin (`build.gradle.kts`) · Java (`pom.xml`, `build.gradle`)
-   Use the detected language's file extensions for all subsequent searches. If a language-specific reference exists (e.g., `../memory-bank/references/swift-intelligence.md` for Swift/iOS), read it
+   Use the detected language's file extensions for all subsequent searches. If a language-specific reference exists (e.g., `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/swift-intelligence.md` for Swift/iOS), read it
 
-Note: Read templates from `../memory-bank/references/templates.md` just before writing each file — only the section you need, not the whole file.
+Note: Read templates from `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/templates.md` just before writing each file — only the section you need, not the whole file.
 
 ## Step 1 — Re-Analyze Project
 
@@ -32,7 +32,7 @@ Scan the project for current state:
 - Build setup, CI/CD configuration
 - Any new cross-cutting patterns since last update
 
-Use `Glob` and `Grep` tools for all discovery.
+Find everything by searching the project, not from memory of an earlier scan.
 
 ## Step 2 — Update Root Files (One at a Time)
 
@@ -43,9 +43,9 @@ Update each file, then verify immediately:
 3. **WIKI.md** — re-scan all feature folders in `memory-bank/` and rebuild the feature index table
 4. **TROUBLESHOOTING.md** (root) — refresh feature links, add new cross-cutting issues
 
-## Step 3 — Verify Each File (MANDATORY)
+## Step 3 — Verify Each File
 
-Read `../memory-bank/references/verification.md` for the procedure. After each file:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/verification.md` for the procedure. After each file:
 
 1. Verify every file path using `Glob`
 2. Verify every type/module name using `Grep`
@@ -58,4 +58,4 @@ Read `../memory-bank/references/verification.md` for the procedure. After each f
 - This does NOT update individual feature docs — use `/update-memory-bank <feature>` for that
 - **Current state only** — no changelogs
 - **Every path and type must be verified**
-- **Use Grep/Glob tools** for all searches
+- **Search with what the session has** — the Grep and Glob tools where they exist, otherwise `grep` and `find` through Bash (on macOS and Linux the main session has no Grep or Glob tool). Wherever these steps name `Grep` or `Glob`, either form counts; what matters is that the result comes from a search run in this session

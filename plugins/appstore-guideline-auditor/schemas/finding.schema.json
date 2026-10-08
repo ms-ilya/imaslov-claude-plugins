@@ -24,9 +24,29 @@
     "checklist": {
       "type": "array",
       "items": {"$ref": "#/definitions/checklistItem"}
+    },
+    "withheld": {
+      "type": "array",
+      "description": "Rules this subagent could not decide because the substrate they need was not read. Optional, and distinct from both arrays above: a withheld rule is neither a finding nor a checklist item, and the report lists it under Rules withheld.",
+      "items": {"$ref": "#/definitions/withheldRule"}
+    },
+    "uncatalogued": {
+      "type": "array",
+      "description": "Things that looked like rejection risks and that no catalogue rule covers. Optional. They never become findings; the report can mention them as candidates for the catalogue.",
+      "items": {"type": "string", "minLength": 10}
     }
   },
   "definitions": {
+    "withheldRule": {
+      "type": "object",
+      "required": ["rule", "target", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "rule": {"type": "string", "minLength": 3},
+        "target": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 10, "description": "Which substrate was not read, with its *_source value."}
+      }
+    },
     "finding": {
       "type": "object",
       "required": ["rule", "guideline", "severity", "verifiability", "target", "file", "issue", "evidence", "absence", "resolutions", "citations"],
@@ -148,7 +168,11 @@
           "enum": ["guidelines", "policy", "catalogue"],
           "description": "catalogue means the claim rests on the authored rule alone, which is every citation on a run that reached none of Apple's pages."
         },
-        "state": {"type": "string", "enum": ["verified", "unverified"]},
+        "state": {
+          "type": "string",
+          "enum": ["verified", "retrieved", "unverified"],
+          "description": "verified: the catalogue check ran against the text retrieved this run, so the cited number exists there and is not marked intentionally omitted. Only the guidelines source can reach it, and it says nothing about what the clause says. retrieved: the source was fetched this run and no check compared the claim with it, which is the most a policy page can reach. unverified: the source was not obtained, or what came back could not be checked."
+        },
         "detail": {"type": "string", "minLength": 1}
       }
     },

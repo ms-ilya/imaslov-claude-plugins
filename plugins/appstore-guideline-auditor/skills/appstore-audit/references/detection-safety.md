@@ -9,6 +9,18 @@ exists without the safeguard the guideline requires beside it. Judging whether a
 string is offensive is not in this catalogue, deliberately — it is in the
 derivation record as not adopted, with that as the reason.
 
+## Contents
+
+- User-generated content: `ugc-no-report-mechanism`, `ugc-no-block-user`,
+  `ugc-no-content-filtering`, `ugc-terms-not-accepted`,
+  `creator-content-age-restriction`
+- Kids Category: `kids-category-third-party-analytics`,
+  `kids-category-external-link-ungated`
+- Health: `healthkit-data-to-advertising`
+- Secrets: `live-payment-secret-in-binary`
+- Submission-time (MANUAL): `medical-claims-unsubstantiated`,
+  `emergency-services-reliance`, `developer-contact-information-absent`
+
 ## ugc-no-report-mechanism
 
 The four UGC capabilities Apple names are filtering, reporting, blocking, and

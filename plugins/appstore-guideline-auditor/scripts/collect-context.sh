@@ -66,5 +66,11 @@ fi
 
 mkdir -p "$SCRATCH" || exit 2
 printf 'Created by collect-context.sh. Safe to delete.\n' > "$SCRATCH/$MARKER"
+# The file list is taken before the collector reads anything, so that the
+# end-of-audit comparison covers the collector too, not only what comes after it.
+bash "$HERE/check-untouched.sh" --snapshot "$ABS" "$SCRATCH" || {
+  echo "collect-context: could not snapshot the project's file list" >&2
+  exit 2
+}
 python3 "$HERE/lib/collect_context.py" "$ABS" "$SCRATCH" || exit $?
 echo "SCRATCH: $SCRATCH"

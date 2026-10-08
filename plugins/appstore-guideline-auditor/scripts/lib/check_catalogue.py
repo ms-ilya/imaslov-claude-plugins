@@ -7,13 +7,17 @@
 #   exists. A pattern that does not compile is a rule that can never fire, and
 #   is indistinguishable from a rule that simply never matches.
 #
-#   Audit runtime — Phase 1 points APPSTORE_GUIDELINE_TEXT at the text it just
-#   retrieved from Apple and re-runs this, so a rule whose number has drifted is
-#   withheld from that run rather than cited wrongly. Apple reuses and retires
-#   numbers: 2.5.10 resolves but is marked "Intentionally omitted", and Push
-#   Notifications moved from 4.5.5 to 4.5.4, where 4.5.5 now means Game Center
-#   Player IDs. Existence alone cannot catch that, so the check compares the
-#   catalogue's claim against the text under the number.
+#   Audit runtime — Phase 1 passes --guideline-text with the text it just
+#   retrieved from Apple, so a rule whose number has drifted is withheld from
+#   that run rather than cited wrongly.
+#
+# What the citation check establishes is exactly two things per cited number:
+# the retrieved text defines it, and the clause under it is not marked
+# "Intentionally omitted" (2.5.10 resolves, and is void). It does NOT compare
+# what the clause says with what the rule claims. Apple also reuses numbers —
+# Push Notifications moved from 4.5.5 to 4.5.4 and 4.5.5 now means Game Center
+# Player IDs — and a rule left pointing at a reused number passes this check.
+# The catalogue holds no expected clause text to compare against.
 #
 # The rule record's shape is declared as RECORD below rather than in a separate
 # schema file. It is read by exactly one consumer, and a schema nobody else
@@ -212,13 +216,12 @@ def check_object(doc, spec, path, out):
 # so anchoring on "- **" and reading the number off the front is the only form
 # that survives all five sections.
 #
-# The trailing boundary is a lookahead rather than \b, because \b cannot match
-# between ")" and a space: with \b the parenthetical group was unreachable and
-# every sub-clause collapsed onto its parent — 5.1.1(i) indexed as 5.1.1. That
-# was not cosmetic. build_index keeps the longest body per key, so a parent
-# retired as "Intentionally omitted" was overwritten by a longer sub-clause and
-# the omitted flag was lost, which is precisely the drift this check exists to
-# catch.
+# The trailing boundary must be a lookahead, not \b: \b cannot match between
+# ")" and a space, so it makes the parenthetical group unreachable and indexes
+# every sub-clause under its parent's number — 5.1.1(i) as 5.1.1. build_index
+# keeps the longest body per key, so a parent retired as "Intentionally
+# omitted" would then be overwritten by a longer sub-clause and lose its omitted
+# flag, which is the retirement this check exists to report.
 CLAUSE_LINE = re.compile(r'^\s*[-*]\s+\*\*((?:[1-5])(?:\.[0-9]+)*(?:\([a-z]+\))?)(?=[\s*]|$)')
 OMITTED = re.compile(r'intentionally\s+omitted', re.I)
 
@@ -339,6 +342,31 @@ def check_rule_semantics(rule, where, report):
                             "a pattern that does not compile is a rule that can never fire")
 
 
+def incomplete_text(rules, index):
+    """Says why `index` cannot be the whole guidelines page, or returns None.
+
+    The text is a model's reproduction of Apple's page and can come back
+    summarised or cut short. Judged against such a text, every clause it lost
+    reads as a rule whose number drifted, so an incomplete text has to be told
+    apart from a renumbering before any citation is judged.
+
+    Both floors come from the catalogue, the one thing here known to be true of
+    the real page. The catalogue cites a subset of Apple's clauses, so the page
+    defines at least as many numbers as the catalogue distinctly cites; and the
+    page has every section the catalogue cites. Passing both does not prove a
+    text complete — one cut inside the last cited section, after that many
+    numbers, passes — so the caller is still told how many numbers were defined.
+    """
+    cited = {rule["guideline"] for rule, _ in rules if rule.get("guideline")}
+    if len(index) < len(cited):
+        return (f"it defines {len(index)} clause number(s), fewer than the "
+                f"{len(cited)} the catalogue cites")
+    absent = sorted({number[0] for number in cited} - {number[0] for number in index})
+    if absent:
+        return f"it defines no clause in section(s) {', '.join(absent)}, which the catalogue cites"
+    return None
+
+
 def check_guidelines(rules, index, report):
     cited = 0
     anchorless = []
@@ -402,8 +430,39 @@ def check_guidance(all_rules, report):
     return resolved
 
 
+USAGE = "usage: check_catalogue.py [--guideline-text <path>] [rules/*.json ...]"
+
+
+def usage_error(message):
+    print(f"check-catalogue: {message}", file=sys.stderr)
+    print(USAGE, file=sys.stderr)
+    sys.exit(2)
+
+
+def parse_args(args):
+    """Returns (rule files, guideline text path or None).
+
+    An option this does not know is refused rather than read as a rule file: a
+    mistyped --guideline-text would otherwise run the gate without the citation
+    layer and report the catalogue clean.
+    """
+    files, text_path = [], None
+    rest = iter(args)
+    for arg in rest:
+        if arg == "--guideline-text":
+            text_path = next(rest, None)
+            if not text_path:
+                usage_error("--guideline-text needs a path")
+        elif arg.startswith("--"):
+            usage_error(f"unknown option {arg}")
+        else:
+            files.append(arg)
+    return files, text_path
+
+
 def main(argv):
-    targets = argv[1:] or [os.path.join(PLUGIN, "rules", f"{c}.json") for c in CATEGORIES]
+    files, text_path = parse_args(argv[1:])
+    targets = files or [os.path.join(PLUGIN, "rules", f"{c}.json") for c in CATEGORIES]
     report = Report()
     all_rules = []
     seen = {}
@@ -448,7 +507,7 @@ def main(argv):
         # reported above — a second failure for one cause reads as two defects.
         if not report.failures:
             report.fail("missing-rule", "rules/", "no rules were loaded")
-        return report.render()
+        return report
 
     resolved = check_guidance(all_rules, report)
     report.note(f"{len(all_rules)} rule(s) across {len(targets)} categor(ies) match the rule record shape")
@@ -460,28 +519,32 @@ def main(argv):
     # skipped, rather than failing the whole gate. Apple's text is not vendored:
     # the audit retrieves it in Phase 1 and points this at what it got, which is
     # the only copy that can be current.
-    text_path = os.environ.get("APPSTORE_GUIDELINE_TEXT")
     if not text_path:
         report.skip("guideline citations NOT verified — no Apple text supplied",
-                    "set APPSTORE_GUIDELINE_TEXT to the text retrieved from Apple to check citations")
-        return report.render()
+                    "pass --guideline-text <path> with the text retrieved from Apple to check citations")
+        return report
     if not os.path.exists(text_path):
         # Being pointed at a text that is not there IS an error: someone asked
         # for verification and did not get it.
         report.fail("outdated", "guideline anchor", f"cannot read {text_path}",
-                    "APPSTORE_GUIDELINE_TEXT must name a readable copy of Apple's guideline text")
-        return report.render()
+                    "--guideline-text must name a readable copy of Apple's guideline text")
+        return report
 
     with open(text_path, encoding="utf-8") as fh:
         index = build_index(fh.read())
-    if not index:
-        report.fail("outdated", "guideline anchor",
-                    f"no guideline numbers could be parsed out of {text_path}",
-                    "the retrieved text must be the guidelines page, with its numbered clauses intact")
-        return report.render()
+    # An incomplete text is a failed retrieval, not a fault in the catalogue, so
+    # it skips the citation layer instead of failing rules against it.
+    why_incomplete = incomplete_text(all_rules, index)
+    if why_incomplete:
+        report.skip(f"guideline citations NOT verified — {text_path} is not the whole "
+                    f"guidelines page: {why_incomplete}",
+                    "no citation was judged against it; retrieve the page again with its "
+                    "numbered clauses intact, or treat this run's citations as unverified")
+        return report
 
     cited, anchorless = check_guidelines(all_rules, index, report)
-    report.note(f"{cited} guideline citation(s) checked against {text_path} ({len(index)} numbers defined)")
+    report.note(f"{cited} guideline citation(s) checked against {text_path} ({len(index)} numbers defined): "
+                "each number exists and is not marked intentionally omitted")
     cases = sum(len(r.get("cases", [])) for r, _ in all_rules)
     report.note(f"{cases} rejection case(s), every one carrying a source URL")
     conflicts = sum(1 for r, _ in all_rules if r.get("statements"))
@@ -491,12 +554,19 @@ def main(argv):
             f"{len(anchorless)} rule(s) carry no Apple anchor — permitted, and counted so the number cannot creep: "
             + ", ".join(anchorless)
         )
-    return report.render()
+    return report
 
 
 if __name__ == "__main__":
-    bad = main(sys.argv)
+    report = main(sys.argv)
+    bad = report.render()
     print()
-    print(f"{bad} PROBLEM(S) — a rule does not enter the catalogue until this is clean"
-          if bad else "CATALOGUE OK")
+    if bad:
+        print(f"{bad} PROBLEM(S) — a rule does not enter the catalogue until this is clean")
+    elif report.skipped:
+        # A clean shape with the citation layer skipped must not end on the
+        # same line as a run that checked citations.
+        print("CATALOGUE OK — citations NOT verified")
+    else:
+        print("CATALOGUE OK")
     sys.exit(1 if bad else 0)

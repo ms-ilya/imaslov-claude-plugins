@@ -1,9 +1,11 @@
 {
   "name": "multi-agent-debate",
   "description": "Structured multi-agent debate that spawns parallel LLM agents for adversarial analysis and synthesis.",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "author": {
     "name": "Ilya"
   },
+  "repository": "https://github.com/ms-ilya/imaslov-claude-plugins",
+  "license": "MIT",
   "keywords": ["debate", "multi-agent", "analysis", "red-team", "adversarial", "perspectives"]
 }

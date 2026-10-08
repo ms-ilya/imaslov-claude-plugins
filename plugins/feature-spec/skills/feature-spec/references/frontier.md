@@ -30,16 +30,23 @@ it will look askable next round and it is not.
 > **A question earns a slot if a different answer would change the code shape,
 > the data model, or the test plan. Otherwise cut it.**
 
+Cut means it takes no slot in a round. When a requirement still depends on the
+answer, the question is deferred and ships as an open question; it is never
+answered for the user.
+
 | ✗ Does not earn it | ✓ Earns it |
 |---|---|
 | "Should the flag be `--resume` or `--continue`?" — naming, settled at implementation | "Is resume automatic after a crash, or opt-in behind a flag?" — changes the default path and every test |
 | "Should the empty state have an illustration?" — changes one view, no shape | "Who owns the draft while the sheet is open — the list or the sheet?" — changes the state graph |
 
-Two more cuts, applied before ranking:
+Three more cuts, applied before ranking:
 
 - **A question a fact-finder could answer is not a question.** Look it up. Asking
   the user something the repo already states is the fastest way to lose their
   trust in every other question.
+- **A question the user's input already answers is not a question.** A decision
+  in their brief or their request is settled at intake. Showing it back to them
+  as a question says you did not read what they gave you.
 - **A question whose answer you would not record is not a question.** If the
   answer would not appear in the record, you are making conversation.
 
@@ -48,12 +55,33 @@ Two more cuts, applied before ranking:
 > **Impact** — how much else changes if the answer flips.
 > **Uncertainty** — whether grounding already implies the answer.
 
+Rate each H, M or L. Impact is **H** when a different answer changes the data
+model, an interface something else depends on, or the scope boundary; **L** when
+it changes one place and nothing downstream. When you cannot choose between H
+and M, it is H: this rating decides whether a round runs at all, and a round
+costs the user one reply where a wrong guess about an interface costs the
+feature.
+
 Ask **high × high** first. Then high impact, then high uncertainty. Take the top
 five. Never more.
 
 **High impact and low uncertainty is not a question — it is a grounding fact you
 failed to look up.** That combination is the single most common ranking error,
 and it is the one the user notices.
+
+The exception is a default no file can settle: nothing in the repository says
+whether exit codes stay the same under a new flag, yet one answer is plainly the
+sane one. Do not spend a slot on it and do not leave it to be deferred. List it
+in the round as taken as given unless corrected.
+
+Before the round, the default sits on `## Frontier` with its value written after
+the entry: `— default: <value>`. When the user lets it stand it moves to
+`## Settled`, with that round and "default, not contested" in its `*Why:*`. List
+only defaults a requirement will depend on. A default that holds for just one
+answer to a question in the same round is not a default yet: it waits for that
+answer, like any dependent question. When no round runs there is nowhere to show
+a default, and one the user never saw is not a decision: it is deferred with
+everything else left on the frontier.
 
 | ✗ Mis-rated | ✓ Rated |
 |---|---|

@@ -1,11 +1,11 @@
 # Glossary
 
-One file per project, at `<specdir>/GLOSSARY.md`. Written **during** the
+One file per project, at `<spec root>/GLOSSARY.md`. Written **during** the
 interview, as terms resolve — never batched at the end. A term settled in round 1
 and written in round 3 is a term that drifted for two rounds.
 
-The glossary lives inside the spec directory because that is the only directory
-this plugin owns. An existing project glossary elsewhere is **read and cited,
+The glossary lives in the spec root because that is the only directory this
+plugin owns. An existing project glossary elsewhere is **read and cited,
 never rewritten.**
 
 ## Contents
@@ -102,8 +102,9 @@ Terms decided during feature specs in this project. External definitions are
 cited, not restated: docs/glossary.md, memory-bank/
 ```
 
-The external-source list is written once, in Phase 1, from whatever grounding
-found. It is what stops the next run from redefining a term this run cited.
+The external-source list is written when the file is created, from whatever
+grounding found. It is what stops the next run from redefining a term this run
+cited. Add the glossary to the record's `## Reads` once it exists.
 
 ## Growth
 

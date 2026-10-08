@@ -10,6 +10,18 @@ selling a subscription is a rejection. Nothing in the source says which, so most
 of this category is PROBABLE by construction, and saying what you could not
 confirm is the substance of the finding rather than a caveat on it.
 
+## Contents
+
+- Payments and purchases: `digital-goods-outside-iap`,
+  `hardcoded-price-string`, `external-purchase-link-unentitled`,
+  `receipt-validated-on-device-only`
+- Subscriptions and restore: `subscription-terms-not-disclosed`,
+  `restore-purchases-absent`
+- Randomised items: `loot-box-odds-undisclosed`
+- Submission-time (MANUAL): `iap-products-approved`
+- Regional and dated (MANUAL): `brazil-alternative-payment-terms`,
+  `eu-core-technology-commission`, `korea-grac-rating-override`
+
 ## digital-goods-outside-iap
 
 A third-party payment SDK together with digital-purchase vocabulary.
@@ -115,12 +127,13 @@ identifiers the scan found**. A list to check beats a reminder to check.
 ## brazil-alternative-payment-terms
 
 MANUAL, regional and dated. Carries `applies_to.storefronts: ["BR"]` and an
-effective date, so it is verified against the **policy sources** rather than the
+effective date, so it rests on the **policy sources** rather than the
 guidelines page — which contains no mention of Brazil or CADE at all.
 
-The finding must name the storefront and the source it was verified against. On
-a run where the policy sources were not retrieved, its citation state is
-`unverified` and the report says so.
+The item must name the storefront and carry the policy source's state from
+`CITATION_STATE`. That state is `retrieved` at most: no check compares this
+item with the policy text, so the report says the source was retrieved, and on
+a run where it was not, that it is `unverified`.
 
 Show it when the scan found Brazilian payment vocabulary — Pix, boleto,
 Mercado Pago, PagSeguro, BRL — or say it applies to any app distributed there.

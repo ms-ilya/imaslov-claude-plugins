@@ -5,9 +5,6 @@
 __pycache__/
 *.py[cod]
 
-# Eval fixtures are sample projects, not repositories
-plugins/*/skills/*/evals/files/**/.git/
-
 # OS files
 .DS_Store
 Thumbs.db
@@ -18,3 +15,10 @@ Thumbs.db
 *~
 .vscode/
 .idea/
+
+# Maintainer tooling: local only, not part of the published marketplace
+.dev/
+.research/
+plugins/*/evals/
+plugins/*/skills/*/evals/
+plugins/feature-spec/scripts/test-checks.sh

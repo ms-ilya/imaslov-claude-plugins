@@ -8,19 +8,42 @@ catalogue. ITMS-91053 is issued by a scanner, per target, before a human sees
 the app — which means these are the findings most worth being right about, and
 the ones where being wrong is cheapest to check.
 
+## Contents
+
+- Privacy manifests: `privacy-manifest-absent`,
+  `privacy-manifest-extension-missing`, `required-reason-api-undeclared`,
+  `third-party-sdk-privacy-manifest-missing`
+- Usage descriptions and tracking: `usage-description-missing`,
+  `usage-description-vague`, `att-usage-description-missing`,
+  `att-prompt-at-launch`
+- Accounts and stored data: `account-deletion-absent`,
+  `siwa-token-revocation-missing`, `sensitive-data-in-userdefaults`,
+  `data-collection-without-consent`
+- Transport and export: `app-transport-security-disabled`,
+  `export-compliance-undeclared`
+- Submission-time (MANUAL): `privacy-policy-url-absent`,
+  `privacy-nutrition-labels-match-build`
+
 ## privacy-manifest-absent
 
 The manifest must exist **and** be in the target's Copy Bundle Resources. A file
 present on disk but not in the build phase does not ship, and the scanner sees
 the built product.
 
-Confirm from `context.json`: the target's `privacy_manifest` is null. Report
-against the target's own `Info.plist` path with `absence: true` — there is no
-line to point at, and inventing one is worse than omitting it.
+Decide from `privacy_manifest_source` in the target file. `privacy_manifest`
+being null does not decide it: the collector does not read Copy Bundle
+Resources, so a manifest it could not tie to a target is not a manifest the
+target lacks.
+
+| `privacy_manifest_source` | What to do |
+|---|---|
+| `none-in-project` | The project holds no manifest, so this target has none. Grade PROVEN and report against the target's own `Info.plist` path with `absence: true` — there is no line to point at, and inventing one is worse than omitting it. |
+| `unattributed` | The project holds manifests and none was tied to this target. Withhold the rule for this target; give the source value and the paths in `PROJECT_FILE`'s `all_privacy_manifests` as the reason, so the reader knows which files to check against the target's build phase. |
+| `file` | The target has one. The rule does not match. |
 
 **Do not fire when** the target is a framework, a static library or a test
-target. The context collector already excludes these from `shipping_targets`;
-if you are looking at one, you are reading the wrong file.
+target. The collector writes a target file only for shipping targets; if you
+are looking at one of these, you are reading the wrong file.
 
 ## privacy-manifest-extension-missing
 
@@ -28,10 +51,13 @@ The same requirement, stated separately because it is the one every source but
 justinperea misses. A widget, share extension or notification service is a
 separate product from Apple's side. The app target's manifest does not cover it.
 
-Confirm the target's `kind` is `app-extension` and its `privacy_manifest` is
-null. Where the app target has a manifest and the extension does not, say so —
-that pairing is the strongest signal that the omission was an oversight rather
-than a decision.
+Confirm the target's `kind` is `app-extension`, then decide from its
+`privacy_manifest_source` exactly as in `privacy-manifest-absent`: PROVEN only
+under `none-in-project`, withheld under `unattributed`. Where the app target's
+source is `file` and the extension's is `unattributed`, say so in the withheld
+reason — an app manifest with none tied to the extension is the usual shape of
+this omission, and it tells the reader to open the extension's Copy Bundle
+Resources first.
 
 ## required-reason-api-undeclared
 
@@ -63,8 +89,15 @@ say that in `unconfirmed`.
 ## usage-description-missing
 
 Correlate two inputs: a protected API in Swift, and the matching key absent from
-that target's `Info.plist`. The context gives you `info_plist_keys` per target,
-so the second half needs no file read.
+that target's `Info.plist`. The target file gives you `info_plist_keys`, so the
+second half needs no file read.
+
+The first half is not per target. `PROJECT_FILE` lists the project's sources
+once, with no record of which target compiles which file. In a project with
+more than one shipping target, report the call against the target whose
+directory holds the file, grade it PROBABLE, and say in `unconfirmed` that the
+file's target membership was not read. A key missing from a widget's Info.plist
+for a call the app makes is not a finding.
 
 The evidence is **the call site**, not the plist. The developer needs the line
 that will crash.
@@ -90,7 +123,7 @@ that will crash.
 | `NWBrowser`, Bonjour | `NSLocalNetworkUsageDescription` |
 
 **Do not fire when** the call is inside `#if DEBUG`, in a test target, or in a
-file the context's `sources` list does not contain.
+file `PROJECT_FILE`'s `sources` list does not contain.
 
 ## usage-description-vague
 

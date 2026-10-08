@@ -1,9 +1,8 @@
 ---
 name: feature-spec-plan
 description: "Turns a critic-verified feature spec into a checked implementation plan — ordered tasks, milestones and per-task done-conditions quoted from the spec. Use when a spec exists and the work needs planning before anyone writes code."
-argument-hint: "<slug> | --from-spec <path> [--out <dir>] [--tasks-only]"
+argument-hint: "<slug> | --from-spec <path> [--out <dir>] [--tasks-only | --extend]"
 disable-model-invocation: true
-effort: high
 context: fork
 agent: general-purpose
 background: false
@@ -24,7 +23,7 @@ hooks:
     - matcher: "Write|Edit"
       hooks:
         - type: command
-          command: "${CLAUDE_PLUGIN_ROOT}/scripts/hook-validate.sh"
+          command: 'bash "${CLAUDE_PLUGIN_ROOT}/scripts/hook-validate.sh"'
 ---
 
 # ABOUTME: Runs phases 8-11 of the feature-spec pipeline — slice, write, critique, report — turning a verified spec into a checked implementation plan.
@@ -38,70 +37,43 @@ plan directory, no estimates in hours or days.
 
 Self-contained: everything you need is below or in
 `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/`. Do not read another
-skill's `SKILL.md`.
+skill's `SKILL.md`. The reference files write the plugin's install directory as
+a `CLAUDE_PLUGIN_ROOT` variable, which is filled in only on this page: it is
+`${CLAUDE_PLUGIN_ROOT}`. Put that path in wherever a reference shows a file or a
+command.
+
+`<specdir>` below is the directory that holds the spec:
+`<spec root>/<YYYY-MM-DD>-<slug>/`, where the spec root is `docs/specs/` unless
+the project keeps its specs in `specs/` or `.plans/`. `tree.md` sits beside
+`spec.md` in it.
 
 ## What you are not doing
 
-The spec settled *what* and *why*, under an interview this plugin already ran and
-a critic that already scored it. **You do not reopen any of it.** No re-grilling,
-no new requirements, no adjusting a priority you disagree with. The one question
+The spec settled *what* and *why*, and a critic already scored it. **You do not
+reopen any of it.** No new questions to the user, no new requirements, no
+adjusting a priority you disagree with. The one question
 left is *where the cuts go and in what order*.
 
-If the spec is genuinely unplannable — no requirements, every one blocked on an
-open marker — say so and stop. That is a finding about the spec, and it belongs
-to `/feature-spec`, not to you.
+If the spec has no requirements, say so and stop. That is a finding about the
+spec, and it belongs to `/feature-spec`, not to you. A spec whose every
+requirement waits on an open marker is still planned: see Degradation.
 
-## Critical rules
+## Rules
 
-Canonical text: `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/rules.md`. Edit there, propagate to all four skills, then run `scripts/test-checks.sh`.
+The rows this skill can act on, verbatim from `rules.md` in the references
+directory.
 
 | ID | Rule |
 |---|---|
-| **R1** | **MUST** write every answer and its rationale to `tree.md` before rendering the next round, and before any other tool call. Answers arrive in batches, so the unit is the round, not the question. |
-| **R2** | **MUST** find facts before a round, never during one. |
-| **R3** | **MUST** announce the mode, the round cap and whether a 4th round can unlock, in Phase 0. |
-| **R4** | **MUST** give every question a recommended answer and a one-line "why it matters" naming what the answer changes. |
-| **R5** | **MUST** stop grilling and draft the moment the counter guard trips. |
-| **R6** | **MUST** report counted cost when the run ends — rounds, questions, fact-finder dispatches, references loaded, critic passes. |
-| **R7** | **MUST** update the `## Protocol` counters in `tree.md` at the end of every round, before anything else. |
-| **R8** | **NEVER** ask the user something a fact-finder could look up. |
-| **R9** | **NEVER** ask more than 5 questions in one round, or run more rounds than the mode allows. |
-| **R10** | **NEVER** assert a statement in the spec that has no source tag in `tree.md`. Cut it, or mark it `[NEEDS CLARIFICATION]`. |
-| **R11** | **NEVER** state a number you cannot count. Token spend, context percentage and elapsed cost are unobservable — reporting them is fabrication. |
-| **R12** | **NEVER** block the deliverable on the critic. Two passes maximum, then write and attach the unresolved findings to `critique.md`. |
-| **R13** | **NEVER** invent a rule the project did not state. The principles gate enforces the repo's rules, not your taste. |
-| **R14** | **NEVER** write an ADR for a decision that fails any one of the three tests. |
-| **R15** | **NEVER** silently overwrite an existing spec. Offer amend / restart / read-only. |
-| **R16** | **NEVER** silently skip a phase. A skipped strategy phase is announced. |
-| **R17** | **NEVER** write outside `<specdir>/`, except the ADR directory. Every other file in the repo is read-only to you. |
-| **R18** | **MUST** cover every requirement and success criterion in the spec with at least one task, or record it under `## Not planned` with the reason it was left out. |
-| **R19** | **MUST** tag every task with the requirements it covers. Work no requirement asked for is legal, and is recorded under `## Enabling work` with what it unblocks — never left untagged. |
-| **R20** | **NEVER** plan around an unresolved `[NEEDS CLARIFICATION]` as though it were settled. Carry every marker into the plan, and mark the tasks it blocks. |
-| **R21** | **NEVER** present an implementation decision the spec did not settle as settled. It goes in `## Plan assumptions` with what reversing it would cost. |
+| **R11** | State no number you cannot count. Token spend, context percentage and elapsed cost cannot be observed from inside a run, so reporting one is invention. |
+| **R12** | The critic never blocks the deliverable. Two passes at most, then write, with the unresolved findings attached to the critique file. |
+| **R13** | Enforce the rules the project stated, never your own taste. A rule nobody wrote down is not a finding. |
+| **R17** | Write only inside the spec root (`docs/specs/` unless the project keeps one elsewhere), plus the ADR directory. Every other file in the repository is read-only to you. |
+| **R18** | Cover every requirement and success criterion in the spec with at least one task, or list it under `## Not planned` with the reason it was left out. A plan that silently drops a requirement reads exactly like one that covers it. |
+| **R19** | Tag every task with the requirements it covers. Work no requirement asked for is legal, and goes under `## Enabling work` with what it unblocks; it is never left untagged. |
+| **R20** | Do not plan around an unresolved `[NEEDS CLARIFICATION]` as though it were settled. Carry every marker into the plan and mark the tasks it blocks, or a deferral becomes an assumption nobody noticed making. |
+| **R21** | Do not present an implementation decision the spec did not settle as settled. It goes in `## Plan assumptions` with what reversing it would cost: the spec is behaviour-only, so every technology choice in the plan is new. |
 
-**R1–R10 and R14–R16 govern the interview and the spec, neither of which this
-stage runs.** They are reproduced verbatim so the four skills share one rule
-block; the rules you can act on here are R11–R13 and R17–R21.
-
-## Track your progress
-
-**Copy this checklist into your first reply and tick items as you go.**
-
-```
-feature-spec-plan: <slug>
-- [ ] Slug resolved by glob, spec found and parseable
-- [ ] spec.md, tree.md and the record's ## Reads read — nothing else
-- [ ] P8 sliced: cuts by behaviour, order by dependency then risk
-- [ ] P9 every task tagged with what it covers        (R19)
-- [ ] P9 every requirement covered or not-planned     (R18)
-- [ ] P9 open markers carried, blocked tasks marked   (R20)
-- [ ] P9 implementation decisions in ## Plan assumptions with reversal cost (R21)
-- [ ] P9 check-plan.sh clean
-- [ ] P10 critic dispatched with the packet, not the plan
-- [ ] P10 blocking findings fixed, at most one re-run (R12)
-- [ ] P11 make-progress.sh run, plan-critique.md written
-- [ ] P11 counted cost reported                       (R6, R11)
-```
 
 ## This runs in isolation
 
@@ -120,33 +92,34 @@ says.
 ## Resolving the slug
 
 `$ARGUMENTS` is a slug. Directories are date-prefixed, so **resolve by glob
-`*-<slug>`**: one match proceeds; several are listed for the user to pick; none
-means stop and list what exists.
+`<spec root>/*-<slug>`**: one match proceeds; several are listed and the run
+stops; none means stop and list what exists.
 
 No argument → **list the slugs that have a spec but no plan, and stop.** List and
 stop, not list and ask: there is no conversation to ask into.
 
 **Stop and say so** if `spec.md` is missing or unparseable. A spec that never
-finished is `/feature-spec-write`'s job, not yours.
+finished is `/feature-spec --resume`'s job, not yours.
 
-**An existing `plan/` directory is never silently overwritten** (R15's stance,
-applied here). Print what is there — the task count and each status — and offer
-three choices, then stop:
+**An existing `plan/` directory is never silently overwritten.** Without
+`--extend` or `--tasks-only`, print what is there — the task count and each
+status — name the three choices, and stop:
 
-| Choice | What it means |
+| Choice | How the user takes it |
 |---|---|
-| **replan** | archive to `plan.archived-<date>/`, cut fresh from the current spec |
-| **extend** | keep every task and its status, add tasks for identifiers now uncovered |
-| **read-only** | print the state and stop |
+| **extend** | runs `/feature-spec-plan <slug> --extend`: every task and its status is kept, and tasks are added for identifiers now uncovered |
+| **replan** | moves `plan/` aside themselves, for example to `plan.archived-<date>/`, and runs `/feature-spec-plan <slug>` again. You do not move or delete it |
+| **read-only** | nothing more to do; the state is printed |
 
 **`extend` is the one that matters after an amendment.** A spec that gained
 `FR-010` does not invalidate `T01`, and a replan that throws away four completed
 statuses to add one task has destroyed the only record of what was actually done.
 
-`--from-spec <path>` takes a spec from anywhere instead of resolving a slug. The
-output directory is the spec's own `plan/`, unless `--out <dir>` says otherwise.
-`--tasks-only` regenerates the task files against an existing `plan.md` — used
-when the spec was amended and the map is still right.
+`--from-spec <path>` takes a spec from anywhere instead of resolving a slug;
+`<specdir>` is then that file's directory. The output directory is the spec's
+own `plan/`, unless `--out <dir>` names another directory inside the spec root
+(R17). `--tasks-only` regenerates the task files against an existing `plan.md` —
+used when the spec was amended and the map is still right.
 
 ---
 
@@ -169,11 +142,14 @@ Do the cutting in memory first, and write nothing until you can answer all four:
 2. **Can every task's done-condition be quoted from the spec?** If not, the cut
    is in the wrong place — it is a layer, or it is enabling work (R19).
 3. **Does M1 contain exactly the P1 requirements?** The spec guarantees P1 alone
-   ships. A first milestone reaching into P2 has spent that guarantee.
+   ships. A first milestone reaching into P2 has spent that guarantee. When the
+   spec's stories carry no priority, the user ranked nothing: plan one
+   milestone, and say in the report that the spec left the slicing open.
 4. **Which choices am I making that the spec did not?** Every type, library,
    file layout and data shape. Those are `## Plan assumptions` (R21), and the
    list is never empty on a feature of any size — the spec names none of them by
-   design.
+   design. What it lists under `## Implementation constraints` is the exception:
+   the user fixed those, so they are followed, not re-decided.
 
 Say what you are cutting and why, in a short paragraph, before writing anything.
 
@@ -181,6 +157,11 @@ Say what you are cutting and why, in a short paragraph, before writing anything.
 
 Write `<specdir>/plan/plan.md` first, then `<specdir>/plan/tasks/T01.md` onward.
 Follow `plan-template.md` exactly; both skeletons are checked.
+
+Under `--extend` and `--tasks-only` some task files already exist. Leave the
+`Status:` line of an existing task file exactly as it is, and under `--extend`
+number new tasks from the next free id. That line is the only record of what was
+actually done, and nothing in the spec or the plan can restore it.
 
 Leave the `## Task graph` table empty at first — it is **generated**, never hand
 written. Then:
@@ -190,44 +171,58 @@ bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-progress.sh <specdir>/plan
 bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.sh <specdir>/plan --spec <specdir>/spec.md --repo-root .
 ```
 
-Fix until clean, in a loop. **A finding from `check-plan.sh` is not a critic
-finding — fix it silently.** It enforces R18 through R21 mechanically: a
+Fix until clean, in a loop of at most three rounds. **A finding from
+`check-plan.sh` is not a critic finding — fix it silently.** It enforces R18 through R21 mechanically: a
 fabricated `Covers` tag, an uncovered requirement, a restated done-condition, an
 assumption with no reversal cost, a dropped open marker, a table that has fallen
 behind its task files.
 
-Statuses are all `Planned`. **You never write an execution summary and never mark
-anything `Done`** — you did not do the work, and a plan that ships pre-ticked is
-a plan nobody trusts.
+Statuses are `Planned`, or `Blocked` for a task that waits on an open marker.
+**You never write an execution summary and never mark anything `Done`** — you
+did not do the work, and a plan that ships pre-ticked is a plan nobody trusts.
 
 ## Phase 10 — CRITIQUE
 
 **Build the packet with the script. Never by hand.**
 
 ```
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-plan-packet.sh <specdir>/plan --spec <specdir>/spec.md --tree <specdir>/tree.md
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-plan-packet.sh <specdir>/plan --spec <specdir>/spec.md --tree <specdir>/tree.md --out <specdir>/.work/plan-critic-packet.md
 ```
 
-Dispatch the `plan-critic` agent with the packet as its prompt. **Not the plan
-files** — prose doubles the phase's cost, and a lens that seems to need it is a
-sign the packet is wrong.
+Dispatch the `plan-critic` agent with one line: the absolute path of the packet,
+and that the packet is the whole of what it judges. Do not paste the packet into
+the prompt, and do not send the plan files instead. `.work/` holds working state
+and ignores itself in version control; leave it where it is.
 
-Three lenses in parallel is available for a large plan: give each its own packet
-with `--lens coverage`, `--lens sequencing`, `--lens honesty`, which carries only
-that lens's rubric and assigns it a distinct finding-id prefix. Three agents all
-numbering their findings `B1` cannot be reconciled per finding in the second pass.
-
-Save each pass verbatim and validate it — the anti-rubber-stamp rule and the
-`QUOTE:`/`FIX:` discipline are checkable, not matters of impression:
+Save the critic's reply verbatim as `<specdir>/plan/plan-critique.md`, then validate
+it:
 
 ```
-bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <pass1.txt> --single
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <specdir>/plan/plan-critique.md --single --packet <specdir>/.work/plan-critic-packet.md
 ```
 
-Blocking findings → fix, re-run `check-plan.sh`, then re-run the critic **once**.
-Reconcile the two passes with the same script, which asserts every pass-1 id is
-accounted for. **Then write regardless** (R12) — attach unresolved findings to
-`plan-critique.md`.
+The script checks the reply's shape, that a clean verdict names what it checked,
+and that every quote is text the packet contains. When it fails, dispatch the
+critic once more with the same packet path and what the script printed, and save
+that reply over the first. If it fails again, carry on: a finding whose quote is
+not in the packet is not acted on, and the report says so.
+
+**Blocking findings:** fix them, re-run `check-plan.sh`, then run the critic
+**once** more on a packet that carries the first pass:
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/make-plan-packet.sh <specdir>/plan --spec <specdir>/spec.md --tree <specdir>/tree.md --pass1 <specdir>/plan/plan-critique.md --out <specdir>/.work/plan-critic-packet.md
+```
+
+Save that reply as `<specdir>/plan/plan-critique.pass2.md` and reconcile the two:
+
+```
+bash ${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <specdir>/plan/plan-critique.md <specdir>/plan/plan-critique.pass2.md --packet <specdir>/.work/plan-critic-packet.md
+```
+
+The script asserts the second pass says what became of every blocking finding
+the first raised, and prints the ids still open. **Then go on regardless** (R12):
+the two files are the critique, and what is unresolved stays in them.
 
 ## Phase 11 — REPORT
 
@@ -242,9 +237,9 @@ Report: paths · task count and milestone boundaries · what each milestone ship
 requirements not planned, with reasons · plan assumptions, with reversal costs ·
 open markers still blocking a task · critic verdict and confidence.
 
-**Counted cost, never estimated** (R6, R11): tasks written · reference files
-loaded · critic passes. No durations, no effort points — the interview never
-measured one, so a number here is invention.
+**Counted cost, never estimated** (R11): tasks written, from the task files, and
+critic passes, from the critique files. No durations, no effort points —
+nothing in the spec or the record measures one, so a number here is invention.
 
 Two things to say plainly when they are true, because both mean the plan is
 weaker than it looks:
@@ -261,9 +256,10 @@ weaker than it looks:
 ## Degradation
 
 Load `${CLAUDE_PLUGIN_ROOT}/skills/feature-spec/references/degradation.md` the
-moment you hit a failure path. The rows that apply here: an unparseable input, a
-critic still blocking after two passes, and an existing directory written by
-another tool.
+moment you hit a failure path. The rows that apply here: a critic still blocking
+after two passes, a critic that returns nothing usable, and an existing
+directory written by another tool. A spec or a record that will not parse is
+reported and the run stops: repairing either belongs to `/feature-spec`.
 
 Three failures are this phase's own:
 
@@ -275,7 +271,7 @@ Three failures are this phase's own:
 
 ## Reference loading
 
-Load at the phase that needs it, **once**. Budget: 4.
+Load at the phase that needs it, **once**.
 
 | File | Loaded at |
 |---|---|
@@ -286,14 +282,15 @@ Load at the phase that needs it, **once**. Budget: 4.
 
 ## Scripts
 
-Run these; do not reimplement their checks in prose.
+Run each as `bash <script> …`, the form the grants cover. Do not reimplement
+their checks in prose.
 
 | Script | When |
 |---|---|
 | `${CLAUDE_PLUGIN_ROOT}/scripts/make-progress.sh <plan-dir>` | after writing or changing any task file — owns the task-graph table |
 | `${CLAUDE_PLUGIN_ROOT}/scripts/check-plan.sh <plan-dir> --spec <spec.md> --repo-root .` | after writing, in a fix-until-clean loop, and again at the end |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/make-plan-packet.sh <plan-dir> --spec <spec.md> --tree <tree.md>` | Phase 10 — builds the critic packet; never assemble it by hand |
-| `${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <p1> [--single \| <p2>]` | after each critic pass, and to reconcile the two |
+| `${CLAUDE_PLUGIN_ROOT}/scripts/make-plan-packet.sh <plan-dir> --spec <spec.md> --tree <tree.md> --out <packet> [--pass1 <first reply>]` | Phase 10 — builds the critic packet; never assemble it by hand |
+| `${CLAUDE_PLUGIN_ROOT}/scripts/check-critique.sh <reply> --single --packet <packet>` · `<reply 1> <reply 2> --packet <packet>` | after each critic pass, and to reconcile the two |
 | `${CLAUDE_PLUGIN_ROOT}/scripts/check-spec.sh <spec.md> --tree <tree.md>` | only to diagnose a spec that will not parse |
 
 **The hook validates every write, closed-world:** it checks what you wrote, never

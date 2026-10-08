@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# ABOUTME: Self-test for check-tree.sh and check-spec.sh — asserts the shipped skeletons pass, then
-# ABOUTME: mutates one rule at a time and asserts that rule's specific failure fires.
+# ABOUTME: Self-test for every checker, generator and the hook, plus skill frontmatter, script grants and
+# ABOUTME: rule tables — asserts the shipped skeletons pass, then mutates one rule at a time and asserts its failure fires.
 #
 # A checker that stops enforcing a rule keeps printing OK, so the rule dies silently.
 # This is the only thing standing between a regex tweak and a plugin that validates nothing.
@@ -17,7 +17,7 @@ WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/docs/specs" "$WORK/docs/adr"
 
-pass=0; fail=0
+pass=0; fail=0; skipped=0
 
 # expect <name> <exit-code> <pattern-that-must-appear> -- <command...>
 expect() {
@@ -66,6 +66,9 @@ Status: Proposed
 Retry state lives in the existing JSON checkpoint file, not a new table.
 EOF
 : > "$WORK/AGENTS.md"
+# The file the skeleton's first grounding fact cites, long enough to hold line 31.
+mkdir -p "$WORK/cmd/ingest"
+for n in $(seq 1 40); do echo "// line $n"; done > "$WORK/cmd/ingest/state.go"
 
 # A spec whose every tag resolves against that record: Q1, Q2, grounding fact 1,
 # the chosen strategy and ADR-0004 all exist in the skeleton above.
@@ -102,7 +105,11 @@ FR-003  Given a retry is scheduled, when state is written, then it lands in the 
 
 ## Out of scope
 
-- Per-source retry overrides.
+- An external retry queue. ← Strategy (chosen)
+
+## Open questions
+
+- [NEEDS CLARIFICATION: Q12 — per-source overrides, low impact, deferred to post-launch]
 EOF
 
 mut() { # mut <dest> <sed-expr> [src]
@@ -122,7 +129,7 @@ mut state.md 's/| Verification | Missing |/| Verification | Done |/'
 expect "illegal coverage state is caught" 1 "illegal state" -- \
   bash "$TREE_CHECK" "$WORK/state.md" --repo-root "$WORK"
 
-mut clearstar.md 's/Clear\* (2 deferred)/Clear*/'
+mut clearstar.md 's/Clear\* (1 deferred)/Clear*/'
 expect "Clear* without a count is caught" 1 "deferral count" -- \
   bash "$TREE_CHECK" "$WORK/clearstar.md" --repo-root "$WORK"
 
@@ -150,21 +157,13 @@ mut orphan.md 's/deps: Q7/deps: Q12/'
 expect "blocked question behind a deferred parent is caught" 1 "transitive" -- \
   bash "$TREE_CHECK" "$WORK/orphan.md" --repo-root "$WORK"
 
-mut round99.md 's/Round: 2 of 3/Round: 99 of 3/'
-expect "impossible round number is caught" 1 "protocol counter" -- \
+mut round99.md 's/Round: 1 of 2/Round: 3 of 2/'
+expect "a round past its declared cap is caught" 1 "past the declared cap" -- \
   bash "$TREE_CHECK" "$WORK/round99.md" --repo-root "$WORK"
-
-mut zeroq.md 's/questions 10/questions 0/'
-expect "question counter below the ids on the page is caught" 1 "distinct question ids" -- \
-  bash "$TREE_CHECK" "$WORK/zeroq.md" --repo-root "$WORK"
 
 mut nophase.md 's/Next phase: 2/Next phase: 12/'
 expect "out-of-range next phase is caught" 1 "phases 0 through 7" -- \
   bash "$TREE_CHECK" "$WORK/nophase.md" --repo-root "$WORK"
-
-mut guard.md 's/questions 10 · fact-finders 2 · references 4/questions 30 · fact-finders 6 · references 9/'
-expect "guard that should have tripped is caught" 1 "guard says" -- \
-  bash "$TREE_CHECK" "$WORK/guard.md" --repo-root "$WORK"
 
 mut noprob.md '/^## Problem$/,/^## Protocol$/{/^## /!d;}'
 expect "empty problem statement is caught" 1 "Problem is empty" -- \
@@ -172,6 +171,108 @@ expect "empty problem statement is caught" 1 "Problem is empty" -- \
 
 expect "missing file is not a pass" 2 "no such file" -- \
   bash "$TREE_CHECK" "$WORK/nope.md"
+
+# --- an entry is checked as an entry, not as a count ----------------------
+# Two rationales on Q1 used to cover for none on Q2.
+python3 - "$WORK/tree.md" "$WORK/why-elsewhere.md" <<'WHYEOF'
+import sys
+src=open(sys.argv[1]).read()
+a="  *Why:* survives a workday outage, bounds file growth. (r1)\n"
+b="  *Why:* one source of truth, and replay already reads it. Stated in the request. (r0)\n"
+assert a in src and b in src
+open(sys.argv[2],'w').write(src.replace(a,"").replace(b, b+"  *Why:* a second reason on the wrong entry. (r1)\n"))
+WHYEOF
+expect "a rationale on another entry does not cover for a missing one" 1 "settled with no rationale: Q2" -- \
+  bash "$TREE_CHECK" "$WORK/why-elsewhere.md" --repo-root "$WORK"
+mut noanswer.md 's/^- \*\*Q2 Attempt ceiling\*\* → .*$/- **Q2 Attempt ceiling** → /'
+expect "a settled entry with no answer is caught" 1 "settled with no answer: Q2" -- \
+  bash "$TREE_CHECK" "$WORK/noanswer.md" --repo-root "$WORK"
+mut colon-entry.md 's/^- \*\*Q2 Attempt ceiling\*\* → /- **Q2 Attempt ceiling**: /'
+expect "a settled entry no tool can read is caught" 1 "under ## Settled cannot be read" -- \
+  bash "$TREE_CHECK" "$WORK/colon-entry.md" --repo-root "$WORK"
+mut plain-deferred.md 's/^- \*\*Q12 Per-source overrides\*\*/- Q12 Per-source overrides/'
+expect "a deferred entry no tool can read is caught" 1 "under ## Deferred cannot be read" -- \
+  bash "$TREE_CHECK" "$WORK/plain-deferred.md" --repo-root "$WORK"
+mut deferred-noreason.md 's/^- \*\*Q12 Per-source overrides\*\* — .*$/- **Q12 Per-source overrides** (r1)/'
+expect "a deferral with no reason is caught" 1 "Q12 is deferred with no reason" -- \
+  bash "$TREE_CHECK" "$WORK/deferred-noreason.md" --repo-root "$WORK"
+mut round-words.md 's/Round: 1 of 2   Next phase: 2/Round: one of two   Next phase: drafting/'
+expect "a round and phase that are not numbers are caught" 1 "Round is not written as" -- \
+  bash "$TREE_CHECK" "$WORK/round-words.md" --repo-root "$WORK"
+mut overcount.md 's/Clear\* (1 deferred)/Clear* (3 deferred)/'
+expect "a Clear* count that ## Deferred does not back is caught" 1 "counts 3 deferred question(s)" -- \
+  bash "$TREE_CHECK" "$WORK/overcount.md" --repo-root "$WORK"
+
+# --- a decision taken from a document keeps the document's wording ---------
+# The (r0) entry is what every requirement citing it is compared with, and
+# nothing downstream has the document, so a paraphrase is caught here or never.
+mkdir -p "$WORK/docs/briefs"
+cat > "$WORK/docs/briefs/retry.md" <<'EOF'
+# Brief: retry uploads
+
+## Decided
+- Retry state lives in the existing checkpoint file, not in a new table — one source of truth — decided by the user
+EOF
+python3 - "$WORK/tree.md" "$WORK" <<'R0EOF'
+import sys
+src=open(sys.argv[1]).read()
+reads="- AGENTS.md   (principles)\n"
+entry=("- **Q1 Where retry state lives** → in the existing checkpoint file. [P1]\n"
+       "  *Why:* one source of truth, and replay already reads it. Stated in the request. (r0)\n")
+assert reads in src and entry in src
+def variant(name, answer, why):
+    out=src.replace(reads, reads+"- docs/briefs/retry.md   (the input brief)\n")
+    out=out.replace(entry, f"- **Q1 Where retry state lives** → {answer} [P1]\n  *Why:* {why} (r0)\n")
+    open(f"{sys.argv[2]}/{name}","w").write(out)
+variant("r0-copied.md", "Retry state lives in the existing checkpoint file, not in a new table.",
+        'one source of truth. From docs/briefs/retry.md, "Decided".')
+variant("r0-paraphrased.md", "Failed uploads are remembered by reusing whatever storage the importer already has.",
+        'one source of truth. From docs/briefs/retry.md, "Decided".')
+variant("r0-unsourced.md", "Retry state lives in the existing checkpoint file, not in a new table.",
+        "one source of truth. Decided in the brief.")
+R0EOF
+expect "a decision copied from the brief passes" 0 "taken from an input document keep its wording" -- \
+  bash "$TREE_CHECK" "$WORK/r0-copied.md" --repo-root "$WORK"
+expect "a decision paraphrased from the brief is caught" 1 "of its answer is that document's wording" -- \
+  bash "$TREE_CHECK" "$WORK/r0-paraphrased.md" --repo-root "$WORK"
+expect "and it is caught on the write that makes it" 1 "of its answer is that document's wording" -- \
+  bash "$TREE_CHECK" "$WORK/r0-paraphrased.md" --repo-root "$WORK" --closed-world
+expect "an intake decision that names no source is caught" 1 "without saying where the decision came from: Q1" -- \
+  bash "$TREE_CHECK" "$WORK/r0-unsourced.md" --repo-root "$WORK"
+
+# --- grounding facts cite lines that exist --------------------------------
+# Every requirement citing a fact inherits what is wrong with it, and nothing
+# downstream opens the file again.
+mut fact-ghost.md 's|cmd/ingest/state.go:31|cmd/ingest/no_such_file.go:9|'
+expect "a grounding fact citing a file that is not there is caught" 1 "no such file exists" -- \
+  bash "$TREE_CHECK" "$WORK/fact-ghost.md" --repo-root "$WORK"
+expect "and it is caught on every write" 1 "no such file exists" -- \
+  bash "$TREE_CHECK" "$WORK/fact-ghost.md" --repo-root "$WORK" --closed-world
+mut fact-line.md 's|cmd/ingest/state.go:31|cmd/ingest/state.go:9999|'
+expect "a grounding fact citing a line past the end of the file is caught" 1 "line 9999 of cmd/ingest/state.go, which has 40 lines" -- \
+  bash "$TREE_CHECK" "$WORK/fact-line.md" --repo-root "$WORK"
+mut fact-refuted.md 's|^1\. Ingest state is a JSON checkpoint at `cmd/ingest/state.go:31`|1. "State lives in `cmd/ingest/store.go:12`" — contradicted: no such file, searched cmd/ingest|'
+expect "a contradicted claim may name the file that is not there" 0 "TREE OK" -- \
+  bash "$TREE_CHECK" "$WORK/fact-refuted.md" --repo-root "$WORK"
+mut fact-image.md 's|^2\. Nearest analogous feature: `--replay`|2. The compose file pins `ghcr.io/acme/api:3` and listens on `localhost:8080`|'
+expect "an image tag and a host are not read as file citations" 0 "TREE OK" -- \
+  bash "$TREE_CHECK" "$WORK/fact-image.md" --repo-root "$WORK"
+mut fact-nosource.md 's|^2\. Nearest analogous feature.*$|2. Something nobody looked up|'
+expect "a grounding fact with no source is caught" 1 "grounding fact 2 does not say where it came from" -- \
+  bash "$TREE_CHECK" "$WORK/fact-nosource.md" --repo-root "$WORK"
+mut fact-dup.md 's|^2\. Nearest analogous feature|1. Nearest analogous feature|'
+expect "a grounding fact number used twice is caught" 1 "grounding fact number used twice: 1" -- \
+  bash "$TREE_CHECK" "$WORK/fact-dup.md" --repo-root "$WORK"
+# A fact from an earlier session describes the code as it was then.
+sed -e 's/Round: 1 of 2/Round: 2 of 4/' -e 's|cmd/ingest/state.go:31|cmd/ingest/state.go:9999|' \
+  "$WORK/tree.md" > "$WORK/fact-stale.md"
+expect "a stale citation from an earlier session is reported, not failed" 0 "it may have changed since" -- \
+  bash "$TREE_CHECK" "$WORK/fact-stale.md" --repo-root "$WORK"
+
+# A crash exits 1, as a finding list does. Only the result line tells them apart.
+printf '# Design tree: x\n\n## Problem\n\xff\xfe broken bytes\n' > "$WORK/badbytes.md"
+expect "a checker that crashed is not read as findings" 2 "did not reach a verdict" -- \
+  bash "$TREE_CHECK" "$WORK/badbytes.md" --repo-root "$WORK"
 
 # --- principles files that live outside the repo --------------------------
 # This machine keeps its only AGENTS.md in ~. Rejecting the path on shape made
@@ -186,21 +287,35 @@ sed "s|- AGENTS.md   (principles)|- $WORK/AGENTS.md   (principles)|" \
 expect "an external path that exists resolves" 0 "outside the repo" -- \
   bash "$TREE_CHECK" "$WORK/tree-ext-ok.md" --repo-root "$WORK"
 
-# --- the guard scores pressure, not the mode's own mandate ----------------
-# `--deep` mandates 4 fact-finders and loads 10 reference files. Fixed
-# thresholds of 3 and 7 put two counters at threshold before the interview
-# asked anything, so `--deep` got exactly one round on any repo with a stack.
-sed -e 's/Mode: default/Mode: deep/' \
-    -e 's/Round: 2 of 3/Round: 2 of 5/' \
-    -e 's/fact-finders 2 · references 4/fact-finders 4 · references 10/' \
-    "$WORK/tree.md" > "$WORK/tree-deep.md"
-expect "deep's own mandate does not trip the guard" 0 "0 at threshold" -- \
-  bash "$TREE_CHECK" "$WORK/tree-deep.md" --repo-root "$WORK"
+# --- a run that asked nothing --------------------------------------------
+# Input that already covers every category gets no clarifying round, so a
+# record at Round 0 whose every decision is tagged (r0) is a finished record.
+sed -e 's/Round: 1 of 2/Round: 0 of 2/' -e 's/bounds file growth\. (r1)$/bounds file growth. Stated in the request. (r0)/' \
+  -e 's/(r1)$/(r0)/' "$WORK/tree.md" > "$WORK/tree-noround.md"
+expect "a record with no clarifying round passes the gate" 0 "TREE OK" -- \
+  bash "$TREE_CHECK" "$WORK/tree-noround.md" --repo-root "$WORK"
 
-sed -e 's/lines read 340/lines read 4000/' -e 's/questions 10/questions 30/' \
-    "$WORK/tree-deep.md" > "$WORK/tree-pressure.md"
-expect "real context pressure still trips it" 1 "guard says" -- \
-  bash "$TREE_CHECK" "$WORK/tree-pressure.md" --repo-root "$WORK"
+mut ahead.md 's/Round: 1 of 2/Round: 0 of 2/'
+expect "an answer tagged past the recorded round is caught" 1 "Round says 0" -- \
+  bash "$TREE_CHECK" "$WORK/ahead.md" --repo-root "$WORK"
+
+# --- a record written by an earlier version ------------------------------
+# Its Protocol block carries Mode, Counters and Guard lines and its own cap.
+# Those fields are no longer read, and the record must still resume and amend.
+python3 - "$WORK/tree.md" "$WORK/tree-v1.md" <<'V1EOF'
+import sys
+src=open(sys.argv[1]).read()
+old="Round: 1 of 2   Next phase: 2\n"
+assert old in src
+new=("Round: 3 of 3   4th round unlocked: no   Next phase: 5\n"
+     "Counters: questions 14 · fact-finders 2 · references 4 · orchestrator reads 5 · lines read 340 · critic passes 0\n"
+     "Largest single read: 180 lines\n"
+     "Guard: not tripped\n"
+     "Mode: default\n")
+open(sys.argv[2],'w').write(src.replace(old,new))
+V1EOF
+expect "a record from an earlier version still passes" 0 "TREE OK" -- \
+  bash "$TREE_CHECK" "$WORK/tree-v1.md" --repo-root "$WORK"
 
 echo
 echo "── check-spec.sh ─────────────────────────────────────────────"
@@ -244,15 +359,127 @@ smut noscen.md '/^FR-002  Given 5 attempts/d'
 expect "requirement with no acceptance scenario is caught" 1 "no acceptance scenario" -- \
   bash "$SPEC_CHECK" "$WORK/noscen.md" --tree "$WORK/tree.md"
 
-smut bare.md 's/- Per-source retry overrides./- [NEEDS CLARIFICATION]/'
+smut bare.md 's/\[NEEDS CLARIFICATION: Q12[^]]*\]/[NEEDS CLARIFICATION]/'
 expect "bare clarification marker is caught" 1 "bare \[NEEDS CLARIFICATION\]" -- \
   bash "$SPEC_CHECK" "$WORK/bare.md" --tree "$WORK/tree.md"
+
+# An out-of-scope line and an implementation constraint are decisions too: each
+# carries a tag, and the tag is resolved like any other.
+expect "a tag on an out-of-scope line resolves" 0 "cited outside the requirement sections resolve" -- \
+  bash "$SPEC_CHECK" "$WORK/spec.md" --tree "$WORK/tree.md"
+smut scope-fake.md 's/^- An external retry queue\. ← Strategy (chosen)/- An external retry queue. ← Settled Q99/'
+expect "a fabricated tag on an out-of-scope line is caught" 1 "fabricated citation" -- \
+  bash "$SPEC_CHECK" "$WORK/scope-fake.md" --tree "$WORK/tree.md"
+smut scope-untagged.md 's/^- An external retry queue\. ← Strategy (chosen)/- An external retry queue./'
+expect "an untagged out-of-scope line is caught" 1 "under ## Out of scope has no source tag" -- \
+  bash "$SPEC_CHECK" "$WORK/scope-untagged.md" --tree "$WORK/tree.md"
+printf '\n## Implementation constraints\n\n- Must use Kafka and store state in Postgres.\n' \
+  | cat "$WORK/spec.md" - > "$WORK/constraint-untagged.md"
+expect "an untagged implementation constraint is caught" 1 "under ## Implementation constraints has no source tag" -- \
+  bash "$SPEC_CHECK" "$WORK/constraint-untagged.md" --tree "$WORK/tree.md"
+
+# One deferred question is one marker. Marked inline and again under Open
+# questions, it is counted twice here and carried into a plan as two.
+expect "a deferred question marked once passes" 0 "1 clarification marker" -- \
+  bash "$SPEC_CHECK" "$WORK/spec.md" --tree "$WORK/tree.md"
+smut marker-twice.md 's/^- An external retry queue\./& [NEEDS CLARIFICATION: Q12 — also marked here]/'
+expect "a deferred question marked twice is caught" 1 "more than once" -- \
+  bash "$SPEC_CHECK" "$WORK/marker-twice.md" --tree "$WORK/tree.md"
+smut marker-inline.md 's/^FR-002  The importer retries a failed row at most 5 times over 24 hours\.$/& [NEEDS CLARIFICATION: the ceiling per source is open]/'
+expect "a tagged requirement with an inline marker is caught" 1 "both a source tag and an inline marker" -- \
+  bash "$SPEC_CHECK" "$WORK/marker-inline.md" --tree "$WORK/tree.md"
+smut marker-anon.md 's/NEEDS CLARIFICATION: Q12 — /NEEDS CLARIFICATION: /'
+expect "an open question that names no question id is caught" 1 "name no question id" -- \
+  bash "$SPEC_CHECK" "$WORK/marker-anon.md" --tree "$WORK/tree.md"
+
+# The markers and the record's ## Deferred list are the same set of questions.
+smut marker-dropped.md '/NEEDS CLARIFICATION: Q12/d'
+expect "a deferred question the spec does not carry is caught" 1 "not carried under ## Open questions: Q12" -- \
+  bash "$SPEC_CHECK" "$WORK/marker-dropped.md" --tree "$WORK/tree.md"
+smut marker-settled.md 's/NEEDS CLARIFICATION: Q12 — /NEEDS CLARIFICATION: Q2 — /'
+expect "a marker for a question the record settled is caught" 1 "which the record does not defer — the record settled it" -- \
+  bash "$SPEC_CHECK" "$WORK/marker-settled.md" --tree "$WORK/tree.md"
+
+# --- a statement nobody can see -------------------------------------------
+# A bullet with no identifier, a section the template does not define and a
+# line after a tag all assert something no tag covers and no critic is shown.
+smut stray.md 's/^## Requirements$/&\
+\
+- The importer must also delete every checkpoint older than 30 days./'
+expect "a statement with no identifier in ## Requirements is caught" 1 "belongs to no identifier" -- \
+  bash "$SPEC_CHECK" "$WORK/stray.md" --tree "$WORK/tree.md"
+expect "and it is caught on a draft mid-write too" 1 "belongs to no identifier" -- \
+  bash "$SPEC_CHECK" "$WORK/stray.md" --tree "$WORK/tree.md" --closed-world
+printf '\n## Non-functional requirements\n\nNFR-001  All retry state is encrypted at rest.\n' \
+  | cat "$WORK/spec.md" - > "$WORK/unknown-section.md"
+expect "a section the template does not define is caught" 1 "not a section of the spec template" -- \
+  bash "$SPEC_CHECK" "$WORK/unknown-section.md" --tree "$WORK/tree.md"
+printf '\n## Out of scope\n\n- A second boundary. ← Settled Q1\n' \
+  | cat "$WORK/spec.md" - > "$WORK/twice-scope.md"
+expect "the same section twice is caught" 1 "more than one 'out of scope' section" -- \
+  bash "$SPEC_CHECK" "$WORK/twice-scope.md" --tree "$WORK/tree.md"
+smut bold-id.md 's/^FR-003  Retry state is written/**FR-003:** Retry state is written/'
+expect "a bolded identifier is still a definition" 0 "found 3 requirements" -- \
+  bash "$SPEC_CHECK" "$WORK/bold-id.md" --tree "$WORK/tree.md"
+
+# "withdrawn" as an ordinary word does not exempt a requirement from its tag.
+sed -e 's/^FR-002  The importer retries a failed row at most 5 times over 24 hours\.$/FR-002  A row withdrawn by the operator is retried at most 5 times over 24 hours./' \
+    -e '/← Settled Q2$/d' "$WORK/spec.md" > "$WORK/withdrawn-word.md"
+expect "the word withdrawn in a sentence exempts nothing" 1 "FR-002 (line [0-9]*) has no source tag" -- \
+  bash "$SPEC_CHECK" "$WORK/withdrawn-word.md" --tree "$WORK/tree.md"
+
+# A scenario is keyed by the identifier that opens its line.
+smut scen-mention.md 's/^FR-002  Given 5 attempts.*$/Scenarios for FR-002 are still to be written./'
+expect "a requirement only mentioned among the scenarios has none" 1 "no acceptance scenario: FR-002" -- \
+  bash "$SPEC_CHECK" "$WORK/scen-mention.md" --tree "$WORK/tree.md"
+smut scen-ghost.md 's/^FR-003  Given a retry is scheduled/FR-0030  Given a retry is scheduled/'
+expect "a scenario keyed to an undefined requirement is caught" 1 "keyed to FR-0030, which the spec does not define" -- \
+  bash "$SPEC_CHECK" "$WORK/scen-ghost.md" --tree "$WORK/tree.md"
+
+# A claim the fact-finder graded unverifiable is not a fact to build on.
+mut tree-unverifiable.md 's|^1\. Ingest state is a JSON checkpoint.*$|1. "Ingest state is meant to move to a database" — unverifiable: about intent, nothing in the code says (fact-finder, r0, low)|'
+expect "a requirement resting on an unverifiable claim is caught" 1 "grades that claim unverifiable" -- \
+  bash "$SPEC_CHECK" "$WORK/spec.md" --tree "$WORK/tree-unverifiable.md"
+
+# A file is where a decision came from, not a decision. Citing one would let a
+# requirement skip the record entirely, with nothing for a critic to compare.
+smut file-tag.md 's|← Settled Q2$|← docs/specs/GLOSSARY.md|'
+expect "a file cited as a source is caught" 1 "a file is not a source" -- \
+  bash "$SPEC_CHECK" "$WORK/file-tag.md" --tree "$WORK/tree.md"
+smut principle-loose.md 's|← Settled Q2$|← Principle: md|'
+expect "a principle tag has to name the file" 1 "md is not in ## Principles in force" -- \
+  bash "$SPEC_CHECK" "$WORK/principle-loose.md" --tree "$WORK/tree.md"
+smut principle-ok.md 's|← Settled Q2$|← Principle: AGENTS.md|'
+expect "a principle tag naming a read file resolves" 0 "SPEC OK" -- \
+  bash "$SPEC_CHECK" "$WORK/principle-ok.md" --tree "$WORK/tree.md"
+# An ADR is citable when its file is among the record's reads; a title is not a file.
+sed 's|^- ADR-0004 Checkpoint file.*$|&\
+- ADR-0009 Use an external queue — Proposed|' "$WORK/tree.md" > "$WORK/tree-adr-title.md"
+smut adr-title.md 's/← ADR-0004/← ADR-0009/'
+expect "an ADR with a title and no file is not a source" 1 "names no ADR file with the id 0009" -- \
+  bash "$SPEC_CHECK" "$WORK/adr-title.md" --tree "$WORK/tree-adr-title.md"
+
+printf '\n## Clarifications\n\n- Q1 (r0) — Where retry state lives → in the existing checkpoint file.\n- Q99 (r1) — Invented → never asked.\n' \
+  | cat "$WORK/spec.md" - > "$WORK/clar-ghost.md"
+expect "a clarification the record never settled is caught" 1 "Clarifications lists Q99" -- \
+  bash "$SPEC_CHECK" "$WORK/clar-ghost.md" --tree "$WORK/tree.md"
 
 smut dupid.md 's/^FR-003  Retry state/FR-001  Retry state/'
 expect "duplicate identifier is caught" 1 "defined 2x" -- \
   bash "$SPEC_CHECK" "$WORK/dupid.md" --tree "$WORK/tree.md"
 
 # --- amendment: identifier stability -------------------------------------
+expect "an unchanged spec is stable against itself" 0 "identifiers stable against the previous spec" -- \
+  bash "$SPEC_CHECK" "$WORK/spec.md" --tree "$WORK/tree.md" --prev "$WORK/spec.md"
+smut reworded-late.md 's/at most 5 times over 24 hours/at most 500 times over 24 days/'
+expect "a change late in a statement is still a reword" 1 "text changed under existing identifiers: FR-002" -- \
+  bash "$SPEC_CHECK" "$WORK/reworded-late.md" --tree "$WORK/tree.md" --prev "$WORK/spec.md"
+sed -e 's/^FR-001  The importer resumes from the last checkpoint on restart\.$/FR-001  SWAP/' \
+    -e 's/^FR-002  The importer retries a failed row at most 5 times over 24 hours\.$/FR-002  The importer resumes from the last checkpoint on restart./' \
+    -e 's/^FR-001  SWAP$/FR-001  The importer retries a failed row at most 5 times over 24 hours./' \
+    "$WORK/spec.md" > "$WORK/renumbered.md"
+expect "a renumber fails even when rewording is allowed" 1 "identifiers were renumbered" -- \
+  bash "$SPEC_CHECK" "$WORK/renumbered.md" --tree "$WORK/tree.md" --prev "$WORK/spec.md" --allow-reword
 smut reworded.md 's/The importer resumes from the last checkpoint on restart./The importer restarts the whole import from row zero./'
 expect "reword under a stable id fails by default" 1 "text changed under existing identifiers" -- \
   bash "$SPEC_CHECK" "$WORK/reworded.md" --tree "$WORK/tree.md" --prev "$WORK/spec.md"
@@ -323,10 +550,8 @@ cat > "$WORK/phase1.md" <<'EOF'
 Batch imports restart from zero after a crash.
 
 ## Protocol
-Slug: 2026-08-24-retry   Mode: default
-Round: 0 of 3   Next phase: 2
-Counters: questions 0 · fact-finders 2 · references 2 · orchestrator reads 3 · critic passes 0
-Guard: not tripped
+Slug: 2026-08-24-retry   Started: 2026-08-24
+Round: 0 of 2   Next phase: 2
 
 ## Reads
 - AGENTS.md   (principles)
@@ -344,8 +569,8 @@ expect "the same record still fails the full gate" 1 "missing sections" -- \
   bash "$TREE_CHECK" "$WORK/phase1.md" --repo-root "$WORK"
 
 # A corrupt value is wrong at any stage and must survive closed-world.
-sed 's/Round: 0 of 3/Round: 99 of 3/' "$WORK/phase1.md" > "$WORK/phase1-bad.md"
-expect "a bad counter still fires in closed-world" 1 "protocol counter" -- \
+sed 's/Round: 0 of 2/Round: 99 of 2/' "$WORK/phase1.md" > "$WORK/phase1-bad.md"
+expect "a round past its cap still fires in closed-world" 1 "past the declared cap" -- \
   bash "$TREE_CHECK" "$WORK/phase1-bad.md" --closed-world --repo-root "$WORK"
 sed 's|- AGENTS.md   (principles)|- docs/nope.md|' "$WORK/phase1.md" > "$WORK/phase1-ghost.md"
 expect "a ghost read still fires in closed-world" 1 "does not exist" -- \
@@ -378,6 +603,11 @@ printf '# Retry uploads\n\nBatch imports restart from zero.\n' > "$WORK/stub.md"
 expect "an empty stub passes closed-world" 0 "SPEC OK (closed-world)" -- \
   bash "$SPEC_CHECK" "$WORK/stub.md" --tree "$WORK/tree.md" --closed-world
 
+# A finding printed on a partial draft is still a finding.
+printf '# Retry uploads\n\n## Requirements\n\n| FR-001 | resumes | ← Settled Q99 |\n' > "$WORK/table.md"
+expect "an unreadable requirement does not end in SPEC OK" 1 "belongs to no identifier" -- \
+  bash "$SPEC_CHECK" "$WORK/table.md" --tree "$WORK/tree.md" --closed-world
+
 echo
 echo "── the hook: silent on incomplete, loud on wrong ─────────────"
 
@@ -389,7 +619,7 @@ expect "hook is silent on a complete record" 0 "" -- hookrun "$WORK/docs/specs/t
 cp "$WORK/phase1.md" "$WORK/docs/specs/tree.md"
 expect "hook is silent on a Phase 1 record" 0 "" -- hookrun "$WORK/docs/specs/tree.md"
 cp "$WORK/phase1-bad.md" "$WORK/docs/specs/tree.md"
-expect "hook fires on a corrupt counter" 2 "protocol counter" -- hookrun "$WORK/docs/specs/tree.md"
+expect "hook fires on a round past its cap" 2 "past the declared cap" -- hookrun "$WORK/docs/specs/tree.md"
 
 cp "$WORK/tree.md" "$WORK/docs/specs/tree.md"
 cp "$WORK/partial.md" "$WORK/docs/specs/spec.draft.md"
@@ -397,33 +627,11 @@ expect "hook is silent on a partial draft" 0 "" -- hookrun "$WORK/docs/specs/spe
 cp "$WORK/partial-fake.md" "$WORK/docs/specs/spec.draft.md"
 expect "hook fires on a fabricated citation" 2 "fabricated citation" -- \
   hookrun "$WORK/docs/specs/spec.draft.md"
+printf '# Retry uploads\n\n## Functional Requirements\n\nFR-001  The importer resumes.\n        ← Settled Q99\n' \
+  > "$WORK/docs/specs/spec.draft.md"
+expect "hook fires whatever the requirement heading is called" 2 "fabricated citation" -- \
+  hookrun "$WORK/docs/specs/spec.draft.md"
 expect "hook ignores an unrelated file" 0 "" -- hookrun "$WORK/AGENTS.md"
-
-echo
-echo "── bump-protocol.sh ──────────────────────────────────────────"
-
-BUMP="$HERE/bump-protocol.sh"
-cp "$WORK/tree.md" "$WORK/bump.md"
-
-expect "advances a round and adds questions" 0 "questions 14" -- \
-  bash "$BUMP" "$WORK/bump.md" --round --questions 4
-
-expect "the bumped record still validates" 0 "TREE OK" -- \
-  bash "$TREE_CHECK" "$WORK/bump.md" --repo-root "$WORK"
-
-expect "corrects a counter below the ids on the page" 0 "questions" -- \
-  bash "$BUMP" "$WORK/bump.md" --show
-
-# The guard is arithmetic, and exit 3 is how a caller learns it just tripped.
-cp "$WORK/tree.md" "$WORK/trip.md"
-expect "trips the guard and says so" 3 "GUARD TRIPPED" -- \
-  bash "$BUMP" "$WORK/trip.md" --questions 30 --references 9 --fact-finders 6
-
-expect "a tripped guard survives the checker" 0 "guard state agrees" -- \
-  bash "$TREE_CHECK" "$WORK/trip.md" --repo-root "$WORK"
-
-expect "missing record is not a pass" 2 "no such file" -- \
-  bash "$BUMP" "$WORK/nope.md" --round
 
 echo
 echo "── check-tree.sh --doctor ────────────────────────────────────"
@@ -434,8 +642,18 @@ expect "healthy record needs no repair" 0 "Nothing structurally wrong" -- \
 sed '/^## Sessions/,$d' "$WORK/tree.md" > "$WORK/nosessions.md"
 expect "names the missing section" 1 "required section" -- \
   bash "$TREE_CHECK" "$WORK/nosessions.md" --doctor
-expect "prints the repair from the shipped skeleton" 1 "── add ── Sessions" -- \
+expect "prints the heading to restore" 1 "── add ── Sessions" -- \
   bash "$TREE_CHECK" "$WORK/nosessions.md" --doctor
+# The skeleton's body is an example about another feature. Printed as a repair,
+# it becomes decisions nobody made in a record every tag resolves against.
+sed '/^## Settled/,/^## Frontier/{/^## Frontier/!d;}' "$WORK/tree.md" > "$WORK/nosettled.md"
+if bash "$TREE_CHECK" "$WORK/nosettled.md" --doctor | grep -q "Where retry state lives"; then
+  echo "FAIL  the doctor offers the skeleton's example decisions as a repair"
+  fail=$((fail+1))
+else
+  echo "ok    the doctor restores a heading, never the example's content"
+  pass=$((pass+1))
+fi
 expect "offers the canonical coverage table" 1 "Problem & outcome" -- \
   bash "$TREE_CHECK" "$WORK/rename.md" --doctor
 
@@ -460,13 +678,38 @@ sed -e 's/^FR-002  The importer retries.*$/FR-002  The importer retries a failed
 expect "a second-position source is traced" 0 "Q2 Attempt ceiling" -- \
   bash "$HERE/make-traceability.sh" "$WORK/spec-second.md" --tree "$WORK/tree.md" --out -
 if bash "$HERE/make-traceability.sh" "$WORK/spec-second.md" --tree "$WORK/tree.md" --out - \
-   | grep -q "Answered but not traced"; then
+   | grep -q "Decided but cited nowhere"; then
   echo "FAIL  a second-position source is still reported as an unused answer"
   fail=$((fail+1))
 else
   echo "ok    a second-position source is not reported as unused"
   pass=$((pass+1))
 fi
+
+# A scope boundary reaches the spec as an out-of-scope line, not as a
+# requirement. Cited there, the decision is traced; cited nowhere, it is named.
+sed 's|← Settled Q2$|← Grounding fact 2|' "$WORK/spec.md" > "$WORK/spec-noq2.md"
+expect "a decision no line cites is named" 0 "Decided but cited nowhere" -- \
+  bash "$HERE/make-traceability.sh" "$WORK/spec-noq2.md" --tree "$WORK/tree.md" --out -
+sed 's|^- An external retry queue\. ← Strategy (chosen)$|- An external retry queue. ← Settled Q2|' \
+  "$WORK/spec-noq2.md" > "$WORK/spec-scope-tag.md"
+expect "a decision cited by an out-of-scope line is traced" 0 "Decisions cited outside the requirements" -- \
+  bash "$HERE/make-traceability.sh" "$WORK/spec-scope-tag.md" --tree "$WORK/tree.md" --out -
+if bash "$HERE/make-traceability.sh" "$WORK/spec-scope-tag.md" --tree "$WORK/tree.md" --out - \
+   | grep -q "Decided but cited nowhere"; then
+  echo "FAIL  a decision cited by an out-of-scope line is still reported as uncited"
+  fail=$((fail+1))
+else
+  echo "ok    a decision cited by an out-of-scope line is not reported as uncited"
+  pass=$((pass+1))
+fi
+
+# The template leaves two statements untagged on purpose, and the generator
+# must not call either untraceable.
+sed -e 's/^FR-003  Retry state is written to the existing checkpoint file\.$/FR-003  Retry state is written to the existing checkpoint file. (withdrawn)/' \
+    -e '/← Grounding fact 1$/d' "$WORK/spec.md" > "$WORK/spec-withdrawn.md"
+expect "a withdrawn requirement is not reported as untraceable" 0 "0 untraceable" -- \
+  bash "$HERE/make-traceability.sh" "$WORK/spec-withdrawn.md" --tree "$WORK/tree.md" --out "$WORK/trace-w.md"
 
 echo
 echo "── make-packet.sh ────────────────────────────────────────────"
@@ -478,18 +721,63 @@ PACKET="$HERE/make-packet.sh"
 
 expect "packet carries the statements with their tags" 0 "← Settled Q1" -- \
   bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
-expect "packet carries the coverage table with Clear* intact" 0 "Clear\* (2 deferred)" -- \
+expect "packet carries the coverage table with Clear* intact" 0 "Clear\* (1 deferred)" -- \
   bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+# A tag alone says where a statement came from, not what the source says. The
+# critic cannot open the record, so the cited text has to travel with the tag.
+expect "packet carries the text of a cited decision" 0 "Settled Q2 Attempt ceiling\*\* → at most 5 attempts" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+expect "packet carries the text of a cited grounding fact" 0 "Grounding fact 1\*\* — Ingest state is a JSON checkpoint" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+expect "packet carries what the record holds and no statement cites" 0 "Grounding fact 2\*\* — Nearest analogous feature" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+printf '\n## Implementation constraints\n\n- Standard library only; no new dependency. ← Settled Q1\n' \
+  | cat "$WORK/spec.md" - > "$WORK/spec-constraint.md"
+expect "packet carries the user's implementation constraints" 0 "Standard library only" -- \
+  bash "$PACKET" "$WORK/spec-constraint.md" --tree "$WORK/tree.md"
 expect "packet carries the deferred list" 0 "Q12 Per-source overrides" -- \
   bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
 expect "packet carries the principles verbatim" 0 "smallest reasonable change" -- \
   bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
-expect "packet carries the scope boundary, not just its heading" 0 "Per-source retry overrides" -- \
+expect "packet carries the scope boundary, not just its heading" 0 "An external retry queue" -- \
   bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
 expect "packet names what a promoted ADR decided" 0 "Decision: Retry state lives" -- \
   bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
 expect "packet inlines the rubric" 0 "anti-rubber-stamp" -- \
   bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+# A check the rubric asks for needs its input in the packet, or the critic
+# reports a blind spot, or reports the check as passed.
+expect "packet carries the opening paragraph" 0 "Batch imports restart from zero after a crash" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+expect "packet carries the user stories the P1 check reads" 0 "P1 · Resume an interrupted import" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+printf '\n## Principle deviations\n\n| "no backward-compat shims" | the old checkpoint has to stay readable | a one-off migration |\n' \
+  | cat "$WORK/spec.md" - > "$WORK/spec-deviation.md"
+expect "packet carries a declared principle deviation" 0 "the old checkpoint has to stay readable" -- \
+  bash "$PACKET" "$WORK/spec-deviation.md" --tree "$WORK/tree.md"
+printf '# Glossary\n\n## Batch\n\nThe rows read from one source file in one run.\n\n- Decided: Q1 (r0)\n' \
+  > "$WORK/docs/specs/GLOSSARY.md"
+expect "packet carries a glossary term with its definition" 0 "\*\*Batch\*\* — The rows read from one source file" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+expect "packet says when a listed term has no glossary entry" 0 "\*\*Checkpoint\*\* — _the record lists this term" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+# A requirement that runs over indented lines reaches the critic whole.
+smut multiline.md 's/^FR-002  The importer retries a failed row at most 5 times over 24 hours\.$/FR-002  The importer retries a failed row:\
+          at most 5 times, spread over 24 hours./'
+expect "a requirement written over several lines is one statement" 0 "SPEC OK" -- \
+  bash "$SPEC_CHECK" "$WORK/multiline.md" --tree "$WORK/tree.md"
+expect "and the packet carries all of it" 0 "retries a failed row: at most 5 times, spread over 24 hours" -- \
+  bash "$PACKET" "$WORK/multiline.md" --tree "$WORK/tree.md"
+# Where the ADR's decision is read from must not depend on the caller's cwd.
+expect "packet finds the ADR from any working directory" 0 "Decision: Retry state lives" -- \
+  env -C / bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md"
+expect "packet is written to a file when asked" 0 "wrote $WORK/.work/critic-packet.md" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md" --out "$WORK/.work/critic-packet.md"
+if [ "$(cat "$WORK/.work/.gitignore" 2>/dev/null)" = "*" ]; then
+  echo "ok    the working directory keeps itself out of version control"; pass=$((pass+1))
+else
+  echo "FAIL  .work/ was created without its ignore file"; fail=$((fail+1))
+fi
 
 # An empty section must say it is empty. A lens cannot tell a section with
 # nothing in it from a section the extraction dropped, and it reports the
@@ -498,55 +786,8 @@ sed '/^## Out of scope$/,$d' "$WORK/spec.md" > "$WORK/spec-noscope.md"
 expect "an absent section says so rather than arriving blank" 0 "states no scope boundary" -- \
   bash "$PACKET" "$WORK/spec-noscope.md" --tree "$WORK/tree.md"
 
-# Three parallel lenses all numbering findings B1 cannot be reconciled per id.
-expect "a lens packet assigns that lens its own id prefix" 0 "\`BP1\`" -- \
-  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md" --lens principles
-if bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md" --lens principles \
-   | grep -q "Lens 1 — Completeness"; then
-  echo "FAIL  a lens packet carries another lens's rubric — duplicated judgement wastes the pass"
-  fail=$((fail+1))
-else
-  echo "ok    a lens packet carries only its own lens"
-  pass=$((pass+1))
-fi
-expect "an unknown lens is refused, not guessed" 2 "unknown lens" -- \
-  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md" --lens vibes
 expect "packet refuses without the record" 2 "--tree is required" -- \
   bash "$PACKET" "$WORK/spec.md"
-
-echo
-echo "── undo-round.sh ─────────────────────────────────────────────"
-
-UNDO="$HERE/undo-round.sh"
-cp "$WORK/tree.md" "$WORK/undo.md"
-
-expect "dry run reports what it would retract" 0 "Retracting round 1" -- \
-  bash "$UNDO" "$WORK/undo.md" --round 1 --dry-run
-expect "dry run writes nothing" 0 "" -- \
-  cmp -s "$WORK/undo.md" "$WORK/tree.md"
-
-expect "retracts and returns the questions" 0 "Returned to ## Frontier" -- \
-  bash "$UNDO" "$WORK/undo.md" --round 1
-expect "retracted answers are struck through, not deleted" 0 "retracted, r1" -- \
-  grep -F "retracted, r1" "$WORK/undo.md"
-expect "the original answer text survives" 0 "checkpoint file" -- \
-  grep -F "checkpoint file" "$WORK/undo.md"
-expect "coverage is marked, never invented" 0 "Re-score required" -- \
-  grep -F "Re-score required" "$WORK/undo.md"
-
-# A retracted question returns to the frontier, so its id is legitimately in two
-# places. Struck-through text must not count as a live identifier — the same rule
-# that lets rule 5 keep a superseded answer in place during an amendment.
-expect "the retracted record still passes the checker" 0 "question ids unique" -- \
-  bash "$TREE_CHECK" "$WORK/undo.md" --repo-root "$WORK"
-expect "the retracted record validates overall" 0 "TREE OK" -- \
-  bash "$TREE_CHECK" "$WORK/undo.md" --repo-root "$WORK"
-
-cp "$WORK/tree.md" "$WORK/undo2.md"
-expect "refuses a round that has no answers" 2 "no settled answer is tagged" -- \
-  bash "$UNDO" "$WORK/undo2.md" --round 9
-expect "refuses a record with nothing left to undo" 2 "nothing to undo" -- \
-  bash "$UNDO" "$WORK/undo.md" --round 1
 
 echo
 echo "── spec-diff.sh ──────────────────────────────────────────────"
@@ -599,7 +840,7 @@ BLOCKING
   FIX: state the interaction with the sweep interval
 EOF
 cat > "$WORK/c2.txt" <<'EOF'
-VERDICT: ship
+VERDICT: fix-first
 CONFIDENCE: moderate — one check depended on a summarised section
 BLIND SPOT: same as pass 1
 
@@ -630,6 +871,125 @@ BLIND SPOT: none
 EOF
 expect "a rubber stamp is caught" 1 "CHECKED AND SOUND" -- \
   bash "$HERE/check-critique.sh" "$WORK/c-stamp.txt" --single
+printf '\nCHECKED AND SOUND\n- Looks good.\n- Great work.\n' | cat "$WORK/c-stamp.txt" - > "$WORK/c-stamp2.txt"
+expect "a sound section that names nothing it checked is caught" 1 "0 item(s) that name what was checked" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c-stamp2.txt" --single
+cat > "$WORK/c-sound.txt" <<'EOF'
+VERDICT: ship
+CONFIDENCE: high — every check ran against text in the packet
+BLIND SPOT: none
+
+CHECKED AND SOUND
+- FR-002 "at most 5 times over 24 hours" says what Settled Q2 says, "at most 5 attempts spread over 24h"
+- SC-001 names its number, 2 seconds
+EOF
+expect "a clean pass that names what it checked validates" 0 "anti-rubber-stamp satisfied" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c-sound.txt" --single --packet "$WORK/.work/critic-packet.md"
+
+# --- a quote is text the critic was shown ---------------------------------
+# A finding about words that are not in the draft sends the orchestrator to
+# edit a spec that was right.
+expect "quotes found in the packet pass" 0 "quote(s) compared against the packet" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1.txt" --single --packet "$WORK/.work/critic-packet.md"
+sed 's/QUOTE: "at most 5 times over 24 hours"/QUOTE: "retries are attempted without any upper bound"/' \
+  "$WORK/c1.txt" > "$WORK/c1-invented.txt"
+expect "a quote the packet does not contain is caught" 1 "B2 quotes text the packet does not contain" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1-invented.txt" --single --packet "$WORK/.work/critic-packet.md"
+sed 's/QUOTE: "at most 5 times over 24 hours"/QUOTE: "The importer retries … at most 5 times over 24 hours"/' \
+  "$WORK/c1.txt" > "$WORK/c1-elided.txt"
+expect "an elided quote is compared piece by piece" 0 "CRITIQUE OK" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1-elided.txt" --single --packet "$WORK/.work/critic-packet.md"
+expect "a packet that cannot be read is not a pass" 2 "packet not found" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1.txt" --single --packet "$WORK/nope.md"
+sed 's/^  QUOTE: "resumes within 2 seconds"$/  QUOTE:/' "$WORK/c1.txt" > "$WORK/c1-emptyquote.txt"
+expect "an empty QUOTE is caught" 1 "B1 carries no QUOTE" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1-emptyquote.txt" --single
+sed 's/^VERDICT: fix-first$/VERDICT: ship/' "$WORK/c1.txt" > "$WORK/c1-ship.txt"
+expect "ship with blocking findings is caught" 1 "VERDICT is ship with 2 blocking" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1-ship.txt" --single
+cat > "$WORK/c-template.txt" <<'EOF'
+VERDICT: ship | fix-first
+CONFIDENCE: high | moderate | low — <one sentence saying why>
+BLIND SPOT: <what this pass could not assess>
+
+BLOCKING
+- B1 [completeness] FR-004 — <finding>
+  QUOTE: "<verbatim from the draft>"
+  WHY: <one sentence>
+  FIX: <the smallest edit that would clear this>
+EOF
+expect "the unfilled output template is caught" 1 "still carries the output template's placeholders" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c-template.txt" --single
+
+# --- a disposition says fixed, or it does not ------------------------------
+sed 's/^- B2 not fixed — .*$/- B2 could not be verified as fixed/' "$WORK/c2.txt" > "$WORK/c2-hedged.txt"
+expect "a hedged disposition accounts for nothing" 1 "does not account for B2" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1.txt" "$WORK/c2-hedged.txt"
+sed 's/^- B2 not fixed — .*$/B1 was fixed. Unlike B2, nothing new was found./' "$WORK/c2.txt" > "$WORK/c2-prose.txt"
+expect "a finding mentioned in passing is not accounted for" 1 "does not account for B2" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1.txt" "$WORK/c2-prose.txt"
+cat > "$WORK/c2-relisted.txt" <<'EOF'
+VERDICT: fix-first
+CONFIDENCE: high — every check ran against text in the packet
+BLIND SPOT: none
+
+RECONCILIATION
+- B1 fixed
+
+BLOCKING
+- B2 [consistency] FR-002 — still contradicts the chosen strategy
+  QUOTE: "at most 5 times over 24 hours"
+  WHY: strategy B sweeps on a timer
+  FIX: state the interaction with the sweep interval
+EOF
+expect "a finding listed as blocking again ships unresolved" 0 "1 finding(s) ship unresolved: B2" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1.txt" "$WORK/c2-relisted.txt"
+sed 's/^VERDICT: fix-first$/VERDICT: ship/' "$WORK/c2.txt" > "$WORK/c2-ship.txt"
+expect "a second pass that ships with a finding open is caught" 1 "VERDICT is ship with 1 finding(s) still open" -- \
+  bash "$HERE/check-critique.sh" "$WORK/c1.txt" "$WORK/c2-ship.txt"
+# The second pass runs in fresh context, so the packet tells it what the first found.
+expect "the second packet carries the first pass's blocking findings" 0 "contradicts the chosen strategy" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md" --pass1 "$WORK/c1.txt"
+expect "and asks for a disposition per finding" 0 "RECONCILIATION" -- \
+  bash "$PACKET" "$WORK/spec.md" --tree "$WORK/tree.md" --pass1 "$WORK/c1.txt"
+
+echo
+echo "── publish-spec.sh ───────────────────────────────────────────"
+
+# The spec that ships is the draft that was checked: renamed, never retyped.
+PUBLISH="$HERE/publish-spec.sh"
+newdir() { rm -rf "$WORK/pub"; mkdir -p "$WORK/pub"; cp "$WORK/tree.md" "$WORK/pub/tree.md"; }
+
+newdir; cp "$WORK/spec.md" "$WORK/pub/spec.draft.md"
+expect "a clean draft is published" 0 "PUBLISHED" -- bash "$PUBLISH" "$WORK/pub"
+if cmp -s "$WORK/spec.md" "$WORK/pub/spec.md" && [ ! -e "$WORK/pub/spec.draft.md" ] \
+   && [ -s "$WORK/pub/traceability.md" ]; then
+  echo "ok    the published spec is the draft byte for byte, and the draft is gone"
+  pass=$((pass+1))
+else
+  echo "FAIL  publishing left the directory in the wrong state"
+  ls "$WORK/pub" | sed 's/^/      | /'
+  fail=$((fail+1))
+fi
+expect "nothing left to publish is not a pass" 2 "already there" -- bash "$PUBLISH" "$WORK/pub"
+
+newdir; cp "$WORK/fake-q.md" "$WORK/pub/spec.draft.md"
+expect "a draft with findings is not published" 1 "NOT PUBLISHED" -- bash "$PUBLISH" "$WORK/pub"
+if [ -e "$WORK/pub/spec.draft.md" ] && [ ! -e "$WORK/pub/spec.md" ]; then
+  echo "ok    a refused publish touches nothing"; pass=$((pass+1))
+else
+  echo "FAIL  a refused publish changed the directory"; fail=$((fail+1))
+fi
+
+# An amendment is checked against the spec it replaces, and says what changed.
+newdir; cp "$WORK/spec.md" "$WORK/pub/spec.md"; cp "$WORK/reworded.md" "$WORK/pub/spec.draft.md"
+expect "an amendment that rewords is refused until acknowledged" 1 "text changed under existing identifiers" -- \
+  bash "$PUBLISH" "$WORK/pub"
+expect "an acknowledged amendment prints what changed" 0 "Reworded under a stable identifier" -- \
+  bash "$PUBLISH" "$WORK/pub" --allow-reword
+newdir; cp "$WORK/spec.md" "$WORK/pub/spec.md"; cp "$WORK/renumbered.md" "$WORK/pub/spec.draft.md"
+expect "a restart replaces the old spec without comparing" 0 "PUBLISHED" -- \
+  bash "$PUBLISH" "$WORK/pub" --fresh
 
 # --- severity is the section, not the id prefix ---------------------------
 # Three parallel lenses MUST use distinct id prefixes or their ids collide, and
@@ -670,7 +1030,6 @@ PROGRESS="$HERE/make-progress.sh"
 # A real plan lives in a repository, and the hook has no --repo-root to pass —
 # it discovers this the same way check-plan.sh does.
 mkdir -p "$WORK/.git" "$WORK/plan/tasks" "$WORK/cmd/ingest"
-: > "$WORK/cmd/ingest/state.go"
 : > "$WORK/cmd/ingest/replay.go"
 
 python3 - "$REFS/plan-template.md" "$WORK/plan/plan.md" "$WORK/plan/tasks/T01.md" <<'PY'
@@ -878,7 +1237,7 @@ expect "a crashed checker does not read as findings" 2 "did not reach a verdict"
 
 # R20: a marker the spec carries and the plan drops is a question answered by
 # stealth, which is the whole reason deferral is bounded in the interview.
-sed 's|^- Per-source retry overrides.$|- [NEEDS CLARIFICATION: per-source retry overrides — decided post-launch]|' \
+sed 's|deferred to post-launch\]|deferred until the second release]|' \
     "$WORK/spec.md" > "$WORK/spec-marked.md"
 expect "open marker the plan drops is caught" 1 "open question the plan does not" -- \
   pcheck stale "$WORK/spec-marked.md"
@@ -950,25 +1309,7 @@ expect "refuses to build a packet without the record" 2 "--tree is required" -- 
   bash "$PPACKET" "$WORK/plan" --spec "$WORK/spec.md"
 
 echo
-echo "── shared constants agree ────────────────────────────────────"
-
-# bump-protocol.sh writes the round cap and the guard line; check-tree.sh
-# validates both. Two copies of that arithmetic is how the guard came to trip on
-# `--deep`'s own mandate in one script while the other called the record fine,
-# so the constants live in record.py and nowhere else.
-dupes=$(grep -lE "'fast': ?[0-9]+, ?'default': ?[0-9]+, ?'deep': ?[0-9]+|references loaded'," \
-        "$HERE/bump-protocol.sh" "$HERE/check-tree.sh" "$HERE/check-spec.sh" 2>/dev/null | wc -l | tr -d ' ')
-if [ "$dupes" -eq 0 ] && grep -q "ROUND_CAP = {'fast': 1, 'default': 4, 'deep': 5}" "$HERE/lib/record.py" \
-   && grep -q "def thresholds" "$HERE/lib/record.py"; then
-  echo "ok    round cap and guard thresholds live only in record.py"
-  pass=$((pass+1))
-else
-  echo "FAIL  round cap or guard thresholds have been copied back out of record.py"
-  echo "      expected: ROUND_CAP and thresholds() defined in lib/record.py, and"
-  echo "      no second copy in bump-protocol.sh, check-tree.sh or check-spec.sh"
-  echo "      (found $dupes script(s) carrying their own copy)"
-  fail=$((fail+1))
-fi
+echo "── one parser for the record ────────────────────────────────"
 
 # Every tool that reads tree.md reads it through record.py. A private tag parser
 # is how the same first-match-only bug shipped in two scripts at once.
@@ -990,18 +1331,19 @@ echo "── skill frontmatter ────────────────�
 
 # Malformed frontmatter loads the skill with EMPTY metadata rather than failing,
 # so a broken description is invisible until nobody can find the skill.
-if python3 "$HERE/lib/check_frontmatter.py" "$HERE/../skills"; then
-  pass=$((pass+1))
-else
-  fail=$((fail+1))
-fi
+python3 "$HERE/lib/check_frontmatter.py" "$HERE/../skills"
+case $? in
+  0) pass=$((pass+1)) ;;
+  3) skipped=$((skipped+1)) ;;
+  *) fail=$((fail+1)) ;;
+esac
 
 echo
 echo "── scripts a skill names are scripts it may run ──────────────"
 
-# A skill that instructs `bash .../bump-protocol.sh` without granting it stops
-# mid-round for a permission prompt — on the step R7 says comes before anything
-# else. The grant and the instruction are two lists that must not drift.
+# A skill that instructs `bash .../check-tree.sh` without granting it stops
+# mid-run for a permission prompt. The grant and the instruction are two lists
+# that must not drift.
 grant_drift() {
   python3 - "$HERE/../skills" <<'PY'
 import re, sys, os, glob
@@ -1033,37 +1375,43 @@ if grant_drift; then pass=$((pass+1)); else fail=$((fail+1)); fi
 echo
 echo "── rule-table drift ──────────────────────────────────────────"
 
-# All three skills reproduce R1–R17 verbatim on purpose, so one numbering means
-# one rule everywhere. Nothing enforced that they stayed identical, which is the
-# actual risk in three copies — not the copies themselves.
+# Each skill reproduces, verbatim, the rules its stage can act on, so one number
+# means one rule everywhere. Two things can go wrong with copies: a row drifts
+# from rules.md, or a rule ends up carried by no skill and so reaches nobody.
 rule_drift() {
   python3 - "$REFS/rules.md" "$HERE/../skills" <<'PY'
 import re,sys,os,glob
 canon={}
 for m in re.finditer(r'^\| \*\*(R\d+)\*\* \| (.*?) \|\s*$', open(sys.argv[1]).read(), re.M):
     canon[m.group(1)]=m.group(2)
-if len(canon)!=21:
-    print(f"FAIL  rules.md defines {len(canon)} rules, expected 21"); sys.exit(1)
+if not canon:
+    print("FAIL  rules.md defines no rule rows"); sys.exit(1)
 bad=0
+carried=set()
 for path in sorted(glob.glob(os.path.join(sys.argv[2],'*','SKILL.md'))):
     name=os.path.basename(os.path.dirname(path))
     got={m.group(1):m.group(2) for m in
          re.finditer(r'^\| \*\*(R\d+)\*\* \| (.*?) \|\s*$', open(path).read(), re.M)}
     if not got:
         print(f"FAIL  {name}: no rule table found"); bad+=1; continue
+    drifted=0
     for rid,text in sorted(got.items(), key=lambda kv:int(kv[0][1:])):
         if rid not in canon:
-            print(f"FAIL  {name}: {rid} is not in rules.md"); bad+=1
+            print(f"FAIL  {name}: {rid} is not in rules.md"); bad+=1; drifted+=1
         elif text!=canon[rid]:
             print(f"FAIL  {name}: {rid} has drifted from rules.md")
             print(f"      canonical: {canon[rid][:72]}…")
             print(f"      in skill:  {text[:72]}…")
-            bad+=1
-    missing=[r for r in canon if r not in got]
-    if missing:
-        print(f"FAIL  {name}: missing {', '.join(sorted(missing, key=lambda r:int(r[1:])))}"); bad+=1
-    else:
-        print(f"ok    {name}: all 21 rules byte-identical to rules.md")
+            bad+=1; drifted+=1
+    carried|=set(got)
+    if not drifted:
+        print(f"ok    {name}: its {len(got)} rules are byte-identical to rules.md")
+orphans=sorted(set(canon)-carried, key=lambda r:int(r[1:]))
+if orphans:
+    print(f"FAIL  no skill carries {', '.join(orphans)} — a rule in rules.md that reaches nobody")
+    bad+=1
+else:
+    print(f"ok    all {len(canon)} rules in rules.md are carried by a skill")
 sys.exit(1 if bad else 0)
 PY
 }
@@ -1071,8 +1419,12 @@ if rule_drift; then pass=$((pass+1)); else fail=$((fail+1)); fi
 
 echo
 echo "─────────────────────────────────────────────────────────────"
-if [ "$fail" -eq 0 ]; then
+if [ "$fail" -eq 0 ] && [ "$skipped" -eq 0 ]; then
   echo "ALL $pass CHECKS BEHAVE AS DOCUMENTED"
+  exit 0
+fi
+if [ "$fail" -eq 0 ]; then
+  echo "$pass checks behave as documented — $skipped group(s) did not run, see the skip line(s) above"
   exit 0
 fi
 echo "$fail of $((pass+fail)) assertions failed"

@@ -22,9 +22,9 @@ You are creating a new Memory Bank for this project — a living documentation s
 2. If `memory-bank/` already exists → inform the user and ask if they want to reinitialize (overwrites root files) or just update with `/update-memory-bank-system`
 3. Detect project language by checking for config files at the root (use `Glob`):
    Swift (`Package.swift`, `*.xcodeproj`) · TypeScript (`tsconfig.json`) · Python (`pyproject.toml`, `setup.py`) · Rust (`Cargo.toml`) · Go (`go.mod`) · Kotlin (`build.gradle.kts`) · Java (`pom.xml`, `build.gradle`)
-   Use the detected language's file extensions for all subsequent searches. If a language-specific reference exists (e.g., `../memory-bank/references/swift-intelligence.md` for Swift/iOS), read it
+   Use the detected language's file extensions for all subsequent searches. If a language-specific reference exists (e.g., `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/swift-intelligence.md` for Swift/iOS), read it
 
-Note: Read templates from `../memory-bank/references/templates.md` just before writing each file — only the section you need, not the whole file.
+Note: Read templates from `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/templates.md` just before writing each file — only the section you need, not the whole file.
 
 ## Step 1 — Scan the Project
 
@@ -43,16 +43,16 @@ Create `memory-bank/` at the project root.
 
 ## Step 3 — Write Root-Level Files (One at a Time)
 
-For each file below, read its template section from `../memory-bank/references/templates.md` (only that section), write the file, then verify immediately before writing the next:
+For each file below, read its template section from `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/templates.md` (only that section), write the file, then verify immediately before writing the next:
 
 1. **WIKI.md** — project overview + empty features table + "How to use" section
 2. **systemPatterns.md** — architecture, patterns, conventions discovered
 3. **techContext.md** — stack, dependencies, build setup, tooling
 4. **TROUBLESHOOTING.md** — any project-wide issues found (or minimal template)
 
-## Step 4 — Verify Each File (MANDATORY)
+## Step 4 — Verify Each File
 
-Read `../memory-bank/references/verification.md` for the procedure. After writing each file:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/memory-bank/references/verification.md` for the procedure. After writing each file:
 
 1. Verify every file path using `Glob`
 2. Verify every type/module name using `Grep`
@@ -75,4 +75,4 @@ Tell the user the Memory Bank is ready. Suggest next steps:
 
 - **Current state only** — no changelogs or history
 - **Every path and type must be verified** against actual source code
-- **Use Grep/Glob tools** for all searches, not bash grep/find
+- **Search with what the session has** — the Grep and Glob tools where they exist, otherwise `grep` and `find` through Bash (on macOS and Linux the main session has no Grep or Glob tool). Wherever these steps name `Grep` or `Glob`, either form counts; what matters is that the result comes from a search run in this session

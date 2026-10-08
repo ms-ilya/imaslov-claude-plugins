@@ -1,11 +1,11 @@
 ---
 name: humanizer
 description: >-
-  Universal AI-to-human text converter. Detects and removes AI writing patterns
-  using priority-tiered pattern detection, statistical texture analysis, and
-  adaptive voice anchoring. Trigger on "humanize", "de-slop", "sounds like AI",
-  "too robotic", "make it sound human/natural", "reads like ChatGPT",
-  "clean up AI slop", or when pasted text is obviously AI-generated.
+  Rewrites text to remove AI writing patterns, using priority-tiered pattern
+  detection, statistical texture analysis, and adaptive voice anchoring. Use
+  when the user asks to humanize or de-slop text, says it sounds like AI,
+  reads like ChatGPT or is too robotic, or asks to make it sound human or
+  natural. Text that merely looks AI-generated is not a request to rewrite it.
 argument-hint: "[text or file path to humanize]"
 allowed-tools: Read, Write, Edit, Grep, Glob, Agent, AskUserQuestion
 effort: high
@@ -278,7 +278,7 @@ AI avoids punctuation that signals informal register.
    - **Non-English text:** Skip English vocabulary/lexicon files. Universal principles only. Optionally spawn research agent.
    - **Standard/long English text (full treatment):** Read `${CLAUDE_SKILL_DIR}/references/vocabulary-by-era.md` and `${CLAUDE_SKILL_DIR}/references/ai-tells-lexicon.md`.
    - **Always for full treatment:** Read `${CLAUDE_SKILL_DIR}/references/pattern-library.md` and `${CLAUDE_SKILL_DIR}/references/voice-archetypes.md`.
-   - **First time or when calibrating:** Read `${CLAUDE_SKILL_DIR}/references/full-example.md`.
+   - **When unsure how far to push a rewrite:** Read `${CLAUDE_SKILL_DIR}/references/full-example.md`.
 4. **Apply 5 Core Rules** - First pass.
 5. **Scan for Tier 1 and Tier 2 patterns** - Fix all Tier 1. Fix Tier 2 when present. For non-English text, apply universal principles, not English word lists.
 6. **Apply universal principles** - Information density, sentence length variance, referential cohesion, punctuation variety.
@@ -297,7 +297,7 @@ AI avoids punctuation that signals informal register.
 6. Non-prose extension (.json, .yaml, .csv, .xml)? Warn: "This file appears to be structured data. Humanize string values only, or skip?"
 
 **Multiple files:**
-1. Glob to find matching files
+1. Find the matching files
 2. List files, ask for confirmation
 3. Process one at a time, showing progress
 4. Skip binary and non-text formats
@@ -475,7 +475,7 @@ Draft rewrite and self-audit happen internally. User sees only the final result.
 | File | When to read | Contents |
 |------|-------------|----------|
 | `${CLAUDE_SKILL_DIR}/references/pattern-library.md` | Full treatment | 23-pattern detection guide with before/after examples |
-| `${CLAUDE_SKILL_DIR}/references/full-example.md` | First time or calibrating | Complete before/after walkthrough with changes list |
+| `${CLAUDE_SKILL_DIR}/references/full-example.md` | When unsure how far to push a rewrite | Complete before/after walkthrough with changes list |
 | `${CLAUDE_SKILL_DIR}/references/voice-archetypes.md` | Full treatment | 12 content archetypes with voice parameters |
 | `${CLAUDE_SKILL_DIR}/references/vocabulary-by-era.md` | English full treatment | AI vocabulary by model era with replacements |
 | `${CLAUDE_SKILL_DIR}/references/ai-tells-lexicon.md` | English full treatment | Word lists from 10 patterns, filler replacements |

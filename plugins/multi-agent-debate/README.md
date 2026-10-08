@@ -90,11 +90,11 @@ This plugin provides:
 | Component | Name | Purpose |
 |-----------|------|---------|
 | **Skill** | `/multi-agent-debate` | Orchestrator workflow: assembles panels, dispatches rounds, synthesizes verdicts |
-| **Agent** | `debate-agent` | Debate participant subagent, tool-restricted (`maxTurns: 1`, no Read/Write/Bash) for text-only arguments |
+| **Agent** | `debate-agent` | Debate participant subagent for text-only arguments: one reply (`maxTurns: 1`) and no tool that writes or runs anything |
 
 Trigger with: `/multi-agent-debate <issue or decision to debate>`
 
-It also triggers automatically on: "debate", "red team", "devil's advocate", "analyze from all angles", "stress-test", "argue both sides", "what am I missing", "challenge my thinking", "poke holes in this"
+It also triggers when you ask for one by name: "debate this", "red team", "devil's advocate", "steelman", "argue both sides", "multi-perspective analysis". A plain request for feedback or pros and cons gets a direct answer, not a debate.
 
 ### Examples
 
@@ -115,7 +115,7 @@ It also triggers automatically on: "debate", "red team", "devil's advocate", "an
 | **Read** | Read attached files, reference documents, and skill reference files |
 | **Write** | Export debate transcript to a markdown file |
 
-Debate agents can only produce text (no file access, no commands). This is enforced at the system level. Only the main orchestrator (Claude) uses tools.
+Debate agents can only produce text. They get a single reply and their tool list holds nothing that writes or runs commands, so they cannot act on anything but the prompt. Only the main orchestrator (Claude) uses tools.
 
 ## Architecture
 
@@ -160,7 +160,7 @@ The system reads `references/archetypes.md` once when building agents. Agents th
 
 ## Design
 
-- Agents are truly independent: separate `debate-agent` subagents with no tools, `maxTurns: 1`, no shared context until cross-examination
+- Agents are truly independent: separate `debate-agent` subagents with a single reply (`maxTurns: 1`) and no shared context until cross-examination
 - Minimum 3 agents per debate to avoid simple "for vs against" framing
 - Full debate (3 rounds) or quick analysis (2 rounds)
 - Organized cross-examination where each agent gets a dedicated section per opponent

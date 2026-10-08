@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ABOUTME: Validates each subagent's findings file against the closed finding schema before aggregation.
 #
-# Usage: validate-findings.sh <findings-*.json ...>
+# Usage: validate-findings.sh <findings-<category>.json ...>
 #
 # An output that fails here is not merged. Merging a malformed result is how a
 # fabricated line number, or a MANUAL item disguised as a finding, reaches a
@@ -10,15 +10,19 @@
 # Two gates, and they answer different questions. The schema asks whether the
 # document has the right shape. The catalogue check asks whether it is about
 # rules that exist, at the numbers and severities those rules actually carry —
-# which the schema cannot ask, because the schema has never seen the catalogue.
-# Without the second gate a finding naming an invented rule id at a guideline
-# number in a section Apple does not have passed cleanly.
+# which the schema cannot ask, because the schema has never seen the catalogue:
+# a finding naming an invented rule id, at a guideline number in a section Apple
+# does not have, is schema-valid.
+#
+# Name every expected file. A file that is not there fails here, and that is the
+# only place a category whose agent wrote nothing is caught: a shell glob over
+# the scratch directory simply does not expand to it.
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PLUGIN="$(dirname "$HERE")"
 
 command -v python3 >/dev/null 2>&1 || { echo "validate-findings: python3 not found" >&2; exit 1; }
-[ $# -ge 1 ] || { echo "usage: validate-findings.sh <findings-*.json ...>" >&2; exit 2; }
+[ $# -ge 1 ] || { echo "usage: validate-findings.sh <findings-<category>.json ...>" >&2; exit 2; }
 
 bad=0
 for f in "$@"; do

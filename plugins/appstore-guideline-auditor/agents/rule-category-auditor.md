@@ -27,16 +27,23 @@ Never write, edit or create anything inside the project you are auditing.
 |---|---|
 | `CATEGORY` | one of safety, performance, business, design, legal |
 | `RULES_FILE` | the catalogue slice for your category |
-| `CONTEXT_FILES` | one JSON file per shipping target, already collected |
-| `GUIDANCE_FILE` | detection prose and non-compliant/compliant pairs, if present |
+| `CONTEXT_FILES` | one JSON file per shipping target, already collected: what that target's own build settings established |
+| `PROJECT_FILE` | what the project holds that is tied to no target: `project` (its root, which every path is relative to), `sources`, `package_manifests`, `all_privacy_manifests` |
+| `GUIDANCE_FILE` | detection prose and non-compliant/compliant pairs, one section per rule |
 | `OUTPUT_FILE` | where to write your findings — outside the project |
-| `CITATION_STATE` | per source, whether it was verified this run |
+| `CITATION_STATE` | per source, its state on this run: verified, retrieved or unverified |
 
-Read `RULES_FILE` and every file in `CONTEXT_FILES` first. The context is
-already collected; **do not re-scan the project for things it already tells
-you** — target names, plist keys, entitlement paths, the source file list. Use
-Grep and Read only to resolve a rule's detection clauses against source files
-the context names.
+These are everything you are given. A reference elsewhere to "the context"
+means the target file for a per-target value and `PROJECT_FILE` for a
+project-wide one.
+
+Read `RULES_FILE` and every file in `CONTEXT_FILES` first, and the section of
+`GUIDANCE_FILE` for a rule before you emit from it. `PROJECT_FILE` lists one
+path per line and can be long: on a large project, search it for a path instead
+of reading it whole. The context is already collected; **do not re-scan the
+project for things it already tells you** — target names, plist keys,
+entitlement paths, the source file list. Use Grep and Read only to resolve a
+rule's detection clauses against source files `PROJECT_FILE` names.
 
 ## How to evaluate a rule
 
@@ -51,6 +58,20 @@ a list of `clauses`. A clause states a `kind`, usually a `file_class`, and
 3. Read every clause's `note` before you emit. A note is a false-positive
    carve-out, and it is there because someone already got this wrong.
 4. If the rule does not match, emit nothing. Silence is a result.
+
+**Source files are not attributed to targets.** `PROJECT_FILE` lists every
+source file once; the collector does not read which target compiles which file.
+A source match is therefore evidence about the project, and the target you
+report it against is your reading of the file's path.
+
+- Report a source match once, against the target whose directory holds the
+  file — not once per target.
+- In a project with more than one shipping target, a rule that joins a source
+  match to a per-target substrate (a plist key, an entitlement, a privacy
+  manifest) has an unconfirmed join. Grade it PROBABLE even where the rule's
+  ceiling is PROVEN, and say in `unconfirmed` that the collector did not read which
+  target compiles the file. An app's camera call set against a widget's
+  Info.plist is the false positive this prevents.
 
 ## The substrate rule — read this before any `present: false` clause
 
@@ -73,12 +94,24 @@ the collector has already translated those into plist keys for you. A target
 whose camera string lives in `INFOPLIST_KEY_NSCameraUsageDescription` **has**
 declared it.
 
-When a rule needs a substrate whose value is `null`, do not emit a finding, do
-not emit a checklist item, and do not stay silent either. Name the rule in your
-output's `status` note as withheld, with the target and the `*_source` value —
-the orchestrator prints it under "Rules withheld". Grading absence off a
-substrate nobody read is how a compliant app receives a page of critical
-findings about keys it has.
+The privacy manifest has no keys list, so its source carries the whole answer:
+
+| `privacy_manifest_source` | What it means | What you may conclude |
+|---|---|---|
+| `file` | a manifest was tied to this target; `privacy_manifest` is its path | the target has one |
+| `none-in-project` | the project holds no `PrivacyInfo.xcprivacy` at all | absence — a finding may rest on this |
+| `unattributed` | the project holds manifests (`all_privacy_manifests` in `PROJECT_FILE`) and none could be tied to this target | nothing. The rule is withheld |
+
+`privacy_manifest: null` alone decides nothing. The collector does not read
+Copy Bundle Resources, so under `unattributed` the target may well ship one of
+the project's manifests.
+
+When a rule needs a substrate that was not read — a `null` keys list, or an
+`unattributed` manifest — do not emit a finding, do not emit a checklist item,
+and do not stay silent either. Add the rule to your output's `withheld` array,
+with the target and the `*_source` value as the reason — the orchestrator
+prints it under "Rules withheld". Grading absence off a substrate nobody read
+is how a compliant app receives a page of critical findings about keys it has.
 
 ## How to grade what you found
 
@@ -142,8 +175,8 @@ how the carve-out gets written.
 2. **Never invent a guideline number.** Copy the rule's `guideline` field
    exactly, `null` included. A rule with a null guideline emits a null one.
 3. **Never invent a rule.** If you see something that looks like a rejection
-   risk and no catalogue rule covers it, say so in your output's `status` note
-   rather than emitting a finding. An uncatalogued finding has not passed the
+   risk and no catalogue rule covers it, describe it in your output's
+   `uncatalogued` array rather than emitting a finding. An uncatalogued finding has not passed the
    entry gate and must not reach a report.
 4. **A carve-out beats a match.** Where a clause's `note` describes the case in
    front of you, do not emit. Client-side keys designed to be public — the
@@ -161,16 +194,22 @@ how the carve-out gets written.
 
 ## Output
 
-Write one JSON object to `OUTPUT_FILE`, matching `schemas/finding.schema.json`:
+Write one JSON object to `OUTPUT_FILE`, matching
+`${CLAUDE_PLUGIN_ROOT}/schemas/finding.schema.json` (read it for the fields of a
+finding and of a checklist item):
 
 ```json
 {
   "category": "legal",
   "status": "completed",
   "findings": [ ... ],
-  "checklist": [ ... ]
+  "checklist": [ ... ],
+  "withheld": [ {"rule": "...", "target": "...", "reason": "..."} ],
+  "uncatalogued": [ "..." ]
 }
 ```
+
+`withheld` and `uncatalogued` are optional; leave them out when empty.
 
 The schema is **closed** — a field it does not define is a validation failure,
 not an extra. Emit `status: "skipped"` with empty arrays when no rule in your

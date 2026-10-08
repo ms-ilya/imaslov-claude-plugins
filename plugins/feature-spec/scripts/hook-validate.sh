@@ -2,11 +2,9 @@
 # ABOUTME: PostToolUse hook — runs check-tree.sh or check-spec.sh whenever the design record or a
 # ABOUTME: spec draft is written, so validation is a property of the harness rather than a remembered step.
 #
-# R1 and R7 are the two rules the skill itself names as the ones that slip first,
-# and both are enforced by a step near the end of a loop the model must run under
-# exactly the context pressure that makes steps get dropped. A hook registered at
-# invocation survives the whole session, which is longer than the allowed-tools
-# grant and longer than any single turn.
+# A check that depends on a remembered step is the first thing dropped under
+# context pressure. A hook registered at invocation survives the whole session,
+# which is longer than the allowed-tools grant and longer than any single turn.
 #
 # Runs CLOSED-WORLD checks only: it asserts about what the file says, never about
 # what the file has not said yet. A record at the end of Phase 1 has four sections
@@ -25,9 +23,21 @@ set -uo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-command -v python3 >/dev/null 2>&1 || exit 0   # no python3: the checkers cannot run anyway
+PAYLOAD="$(cat)"
 
-FILE="$(python3 -c '
+# Without python3 neither the payload parser nor a checker can run. Staying
+# silent would leave the writer believing its files are being checked, so say
+# so — but only for a write that names a file this hook covers, because the
+# hook also sees every unrelated write for the rest of the session.
+if ! command -v python3 >/dev/null 2>&1; then
+  if printf '%s' "$PAYLOAD" | grep -qE '/(tree|spec|spec\.draft|plan|T[0-9][0-9]+)\.md"'; then
+    echo "feature-spec: python3 not found, so this write was NOT checked. Install python3 or run the checkers by hand." >&2
+    exit 1
+  fi
+  exit 0
+fi
+
+FILE="$(printf '%s' "$PAYLOAD" | python3 -c '
 import json,sys
 try:
     d=json.load(sys.stdin)
@@ -50,8 +60,10 @@ case "$base" in
     out="$(bash "$HERE/check-tree.sh" "$FILE" --closed-world 2>&1)"; rc=$?
     ;;
   spec.draft.md|spec.md)
-    [ -f "$dir/tree.md" ] || exit 0
-    grep -qE '^##\s+(Requirements|Success criteria)' "$FILE" 2>/dev/null || exit 0
+    # Only a spec that sits beside a real design record. Which sections it has
+    # written so far is the checker's business: a heading the template does not
+    # define is itself a finding, so the hook does not pre-filter on headings.
+    grep -q '^## Protocol' "$dir/tree.md" 2>/dev/null || exit 0
     out="$(bash "$HERE/check-spec.sh" "$FILE" --tree "$dir/tree.md" --closed-world 2>&1)"; rc=$?
     ;;
   plan.md)
@@ -72,6 +84,19 @@ case "$base" in
 esac
 
 [ "$rc" -eq 0 ] && exit 0
+
+# The checkers exit 1 for a finding and 2 or more when they could not run to
+# completion. The second is a fault in the check, not in the file, and telling
+# the writer to fix the file would send it hunting for a defect that is not there.
+if [ "$rc" -ge 2 ]; then
+  {
+    echo "feature-spec: the check on $base did not run to completion, so this write was NOT checked."
+    echo "Nothing here says the file is wrong. The checker's own output follows."
+    echo
+    printf '%s\n' "$out" | head -20
+  } >&2
+  exit 2
+fi
 
 {
   echo "feature-spec: $base contains something that is wrong at any stage."

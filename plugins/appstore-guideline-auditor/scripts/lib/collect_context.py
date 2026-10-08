@@ -1,6 +1,6 @@
 # ABOUTME: Reads an Xcode project once — targets, plists, entitlements, manifests, sources — and writes the context outside it.
 #
-# Two properties this must have, and they pull against each other:
+# Four properties this must have:
 #
 #   It writes nothing into the audited project. The audit allows itself exactly
 #   one created path there — the report, written at the end by the skill. Every
@@ -16,10 +16,18 @@
 #
 #   It never reports a substrate it could not read as a substrate that is empty.
 #   `info_plist_keys: null` means "not read"; `[]` means "read, and the key is
-#   genuinely not there". Only the second can support an absence finding. The
-#   two were the same value once, and the result was that a project whose
-#   Info.plist the collector simply failed to locate produced a page of
-#   confident critical findings about keys that were present all along.
+#   genuinely not there". Only the second can support an absence finding:
+#   absence findings are graded PROVEN, so an Info.plist the collector merely
+#   failed to locate must not look like one that declares nothing. Every
+#   substrate therefore carries a `*_source` field saying how it was
+#   established, and the privacy manifest follows the same rule.
+#
+#   It does not say which target compiles or bundles a file. Membership lives
+#   in build phases and synchronised folders, which this collector does not
+#   parse. Source files and the project's privacy manifests are therefore
+#   written once, in project.json, as facts about the project, and a manifest it
+#   could not tie to a target by location is reported as unattributed, never as
+#   absent.
 
 import json
 import os
@@ -73,27 +81,40 @@ SKIP_DIRS = {".git", "Pods", "Carthage", "build", "DerivedData", ".build", "node
 
 
 def detect_cross_platform(root):
-    """Returns the framework name if this is one of the 8 out-of-scope families."""
+    """Returns (framework, marker, note).
+
+    `framework` is set when this is one of the 8 out-of-scope families. `note`
+    is set when a check could not run: a package.json that cannot be read is not
+    evidence that the project is native, so the caller reports it as a degraded
+    scan instead of letting the project pass as native unremarked.
+    """
     for name, markers in CROSS_PLATFORM:
         for marker in markers:
             if os.path.exists(os.path.join(root, marker)):
-                return name, marker
+                return name, marker, None
     # React Native declares itself in package.json rather than by a unique file.
     package = os.path.join(root, "package.json")
     if os.path.exists(package):
+        unread = ("package.json at the scanned root could not be read as a JSON object ({}), "
+                  "so its dependencies were not checked for React Native, Expo or Capacitor")
         try:
-            with open(package) as fh:
+            with open(package, encoding="utf-8") as fh:
                 data = json.load(fh)
-            deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
-            if "expo" in deps:
-                return "Expo", "package.json dependency 'expo'"
-            if "react-native" in deps:
-                return "React Native", "package.json dependency 'react-native'"
-            if "@capacitor/core" in deps:
-                return "Capacitor", "package.json dependency '@capacitor/core'"
-        except Exception:
-            pass
-    return None, None
+        except (OSError, ValueError) as exc:
+            return None, None, unread.format(exc)
+        if not isinstance(data, dict):
+            return None, None, unread.format(f"top level is a {type(data).__name__}")
+        deps = {}
+        for section in ("dependencies", "devDependencies"):
+            if isinstance(data.get(section), dict):
+                deps.update(data[section])
+        if "expo" in deps:
+            return "Expo", "package.json dependency 'expo'", None
+        if "react-native" in deps:
+            return "React Native", "package.json dependency 'react-native'", None
+        if "@capacitor/core" in deps:
+            return "Capacitor", "package.json dependency '@capacitor/core'", None
+    return None, None, None
 
 
 def find_pbxproj(root):
@@ -113,19 +134,31 @@ def find_pbxproj(root):
 
 
 def load_pbxproj(path):
-    """pbxproj is an old-style plist. plutil converts it; without plutil we parse
-    the subset we need by hand rather than failing, because a non-macOS run should
-    degrade rather than stop."""
+    """Returns (doc, mode, why_not_plutil).
+
+    pbxproj is an old-style plist. plutil converts it; without a conversion we
+    parse the subset we need by hand rather than failing, because a non-macOS
+    run should degrade rather than stop. The reason is returned because the
+    causes need different fixes: a missing plutil is the machine, a plutil that
+    rejects the file is the project.
+    """
     try:
         out = subprocess.run(
             ["plutil", "-convert", "json", "-o", "-", path],
             capture_output=True, timeout=30,
         )
-        if out.returncode == 0:
-            return json.loads(out.stdout), "plutil"
-    except (FileNotFoundError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        pass
-    return None, "regex"
+    except FileNotFoundError:
+        return None, "regex", "plutil is not installed"
+    except subprocess.TimeoutExpired:
+        return None, "regex", "plutil did not finish converting the project file within 30 seconds"
+    if out.returncode != 0:
+        said = (out.stderr or out.stdout).decode("utf-8", "replace").strip().splitlines()
+        return None, "regex", ("plutil could not convert the project file"
+                               + (f" ({said[0]})" if said else ""))
+    try:
+        return json.loads(out.stdout), "plutil", None
+    except json.JSONDecodeError as exc:
+        return None, "regex", f"plutil's conversion of the project file was not valid JSON ({exc})"
 
 
 def targets_via_plist(doc):
@@ -185,9 +218,9 @@ def resolve(srcroot, root, value):
     Build settings are relative to SRCROOT — the .xcodeproj's parent — and NOT
     to the directory the scan was pointed at. The two are the same only when the
     project sits at the top of the scanned tree; they differ for every project
-    under `ios/`, `App/` or a monorepo package. Resolving against the scan root
-    made those projects report their Info.plist and entitlements as missing
-    while both sat on disk one directory away.
+    under `ios/`, `App/` or a monorepo package, where a path joined onto the
+    scan root names a file that does not exist while the real one sits a
+    directory away.
 
     The scan root is still tried as a fallback, because a project laid out in
     some way neither of us anticipated is better read than not read.
@@ -299,11 +332,10 @@ def collect_sources(root):
 def find_suffixed(root, suffix):
     """Prunes with `dirnames[:]`, like the other two walks.
 
-    Matching SKIP_DIRS against the absolute path instead means an ancestor
-    ABOVE the scan root — a checkout that happens to live under `build/` or
-    `Pods/` — excludes the entire project. That is not a hypothetical: it
-    silently emptied the entitlements list and left every entitlement-keyed
-    rule unable to fire, with nothing in the output saying so.
+    SKIP_DIRS must be matched against directory names below the scan root,
+    never against the absolute path: an ancestor ABOVE the root — a checkout
+    that happens to live under `build/` or `Pods/` — would otherwise exclude
+    the entire project and return an empty list that reads as "none exist".
     """
     hits = []
     for dirpath, dirnames, filenames in os.walk(root):
@@ -316,7 +348,8 @@ def find_suffixed(root, suffix):
 
 def build(root):
     root = os.path.abspath(root)
-    framework, marker = detect_cross_platform(root)
+    framework, marker, package_note = detect_cross_platform(root)
+    project_notes = [package_note] if package_note else []
     if framework:
         return {
             "project": root,
@@ -330,7 +363,10 @@ def build(root):
     if not pbxproj:
         return {"project": root, "in_scope": False, "out_of_scope_reason": "no-xcode-project"}
 
-    doc, mode = load_pbxproj(pbxproj)
+    doc, mode, why_not_plutil = load_pbxproj(pbxproj)
+    if why_not_plutil:
+        project_notes.insert(0, f"{why_not_plutil}, so build settings could not be attributed "
+                                "per target and every substrate is reported as unread")
     if doc is not None:
         raw = targets_via_plist(doc)
     else:
@@ -381,6 +417,17 @@ def build(root):
                 break
         if manifest is None and len(all_manifests) == 1 and kind == "app":
             manifest = all_manifests[0]
+        # Neither match above reads Copy Bundle Resources membership, so a
+        # target left without one has not been shown to lack a manifest: it may
+        # sit in a subdirectory, or beside a plist Xcode generates and never
+        # writes to disk. Absence is established for a target only when the
+        # project holds no manifest at all.
+        if manifest is not None:
+            manifest_source = "file"
+        elif all_manifests:
+            manifest_source = "unattributed"
+        else:
+            manifest_source = "none-in-project"
 
         notes = [n for n in (plist_note, ent_note) if n]
         if xcconfigs and not settings:
@@ -402,7 +449,9 @@ def build(root):
             "info_plist_source": plist_source,
             "entitlements": os.path.relpath(ent, root) if ent else None,
             "entitlements_source": ent_source,
+            # None is "no manifest" only when the source is none-in-project.
             "privacy_manifest": os.path.relpath(manifest, root) if manifest else None,
+            "privacy_manifest_source": manifest_source,
             "substrate_notes": notes,
             "build_settings": {k: v for k, v in settings.items() if isinstance(v, str)},
         })
@@ -443,8 +492,8 @@ def build(root):
             "detail": detail,
             "pbxproj": os.path.relpath(pbxproj, root),
             "parse_mode": mode,
-            "parse_degraded": doc is None,
-            "parse_degraded_reasons": degraded_reasons(doc, []),
+            "parse_degraded": bool(project_notes),
+            "parse_degraded_reasons": degraded_reasons(project_notes, []),
             "shipping_targets": [],
             "skipped_targets": skipped,
         }
@@ -454,8 +503,8 @@ def build(root):
         "in_scope": True,
         "pbxproj": os.path.relpath(pbxproj, root),
         "parse_mode": mode,
-        "parse_degraded": doc is None or any(t["substrate_notes"] for t in shipping),
-        "parse_degraded_reasons": degraded_reasons(doc, shipping),
+        "parse_degraded": bool(project_notes) or any(t["substrate_notes"] for t in shipping),
+        "parse_degraded_reasons": degraded_reasons(project_notes, shipping),
         "shipping_targets": shipping,
         "skipped_targets": skipped,
         "sources": sources,
@@ -471,17 +520,14 @@ def build(root):
     }
 
 
-def degraded_reasons(doc, shipping):
+def degraded_reasons(project_notes, shipping):
     """Why this run is weaker than a clean one, in the reader's words.
 
     A degraded flag with no reason tells a developer their report is worth less
     without telling them what to fix, so every reason names the target it is
-    about.
+    about, or says what about the project as a whole could not be read.
     """
-    reasons = []
-    if doc is None:
-        reasons.append("plutil was unavailable, so build settings could not be attributed "
-                       "per target and every substrate is reported as unread")
+    reasons = list(project_notes)
     for target in shipping:
         for note in target["substrate_notes"]:
             reasons.append(f"{target['name']}: {note}")
@@ -515,14 +561,21 @@ def main(argv):
             print(f"  {context['detail']}")
         for target in context.get("skipped_targets", []):
             print(f"  skipped ({target['kind']}): {target['name']}")
+        for reason in context.get("parse_degraded_reasons", []):
+            print(f"  DEGRADED: {reason}")
         return 0
 
     for target in context["shipping_targets"]:
         path = os.path.join(outdir, f"target-{re.sub(r'[^A-Za-z0-9_-]', '_', target['name'])}.json")
         with open(path, "w") as fh:
-            json.dump({"target": target, "project": context["project"],
-                       "sources": context["sources"],
-                       "package_manifests": context["package_manifests"]}, fh, indent=2)
+            json.dump({"target": target, "project": context["project"]}, fh, indent=2)
+
+    # Written once, and not into the per-target files: nothing here was read as
+    # belonging to a target, and a copy inside target-X.json reads as if it were.
+    with open(os.path.join(outdir, "project.json"), "w") as fh:
+        json.dump({key: context[key] for key in
+                   ("project", "sources", "package_manifests", "all_privacy_manifests")},
+                  fh, indent=2)
 
     print(f"IN SCOPE: {len(context['shipping_targets'])} shipping target(s), "
           f"{len(context['skipped_targets'])} skipped, {context['source_count']} source file(s)")
@@ -532,7 +585,7 @@ def main(argv):
         print(f"  {target['kind']:14} {target['name']}"
               f"  plist={plist}"
               f"  keys={'UNREAD' if keys is None else len(keys)}"
-              f"  manifest={target['privacy_manifest'] or 'MISSING'}"
+              f"  manifest={target['privacy_manifest'] or '<' + target['privacy_manifest_source'] + '>'}"
               f"  entitlements={target['entitlements'] or '-'}")
     for target in context["skipped_targets"]:
         print(f"  skipped ({target['kind']}): {target['name']}")

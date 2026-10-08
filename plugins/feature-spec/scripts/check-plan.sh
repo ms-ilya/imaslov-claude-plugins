@@ -58,8 +58,8 @@ fi
 [ -f "$SPEC" ] || { echo "FAIL  spec not found: $SPEC"; exit 2; }
 command -v python3 >/dev/null 2>&1 || { echo "FAIL  python3 not found — check-plan.sh cannot run"; exit 2; }
 
-# Walk up from the plan directory for the repository root. Falling back to the
-# cwd is the old behaviour, kept for a plan that lives outside a repo.
+# Walk up from the plan directory for the repository root. A plan that lives
+# outside any repository has no root to find, and its paths resolve against the cwd.
 if [ -z "$ROOT" ]; then
   probe="$(cd "$DIR" && pwd)"
   while [ "$probe" != "/" ]; do
@@ -229,8 +229,7 @@ else:
         ok("plan.md has every required section")
 
     # The graph is generated from the task files. Checking it means checking
-    # that the generation is current — the same stance bump-protocol.sh takes
-    # with the record's counters: recompute, never accept a self-report.
+    # that the generation is current: recompute, never accept a self-report.
     rows = {r['task']: r for r in plan.graph_rows()}
     # A row for a task file not yet written is the normal state of a plan whose
     # map was drafted before its tasks. That is an assertion about absence, so it

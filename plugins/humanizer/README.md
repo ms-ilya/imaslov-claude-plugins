@@ -41,7 +41,7 @@ The skill orchestrates the full pipeline. For long text (over 2000 words), it sp
 
 Pass text directly: `/humanizer [paste your text]`
 
-It also auto-triggers when pasted text is obviously AI-generated.
+It does not start on its own because pasted text looks AI-generated; ask for the rewrite.
 
 ### Examples
 

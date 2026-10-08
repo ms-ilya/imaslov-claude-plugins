@@ -6,6 +6,17 @@ Loaded by the `design` subagent. One section per rule, keyed by the rule's
 This category contains the catalogue's most dangerous false positive. Read
 `login-service-equivalent-option-absent` before emitting anything from it.
 
+## Contents
+
+- Login: `login-service-equivalent-option-absent`
+- Minimum functionality: `minimum-functionality-web-wrapper`
+- Push notifications: `push-entitlement-unused`, `push-required-to-function`,
+  `push-marketing-without-optin`
+- Identity: `apple-trademark-in-bundle-id`
+- Submission-time (MANUAL): `spam-duplicate-bundle-ids`,
+  `age-rating-questionnaire-unanswered`, `age-rating-social-descriptor`,
+  `streaming-game-catalogue-rules`
+
 ## login-service-equivalent-option-absent
 
 **Two of the four upstream sources state this rule wrongly, and the wrong
@@ -127,11 +138,11 @@ turned a rule about every submission into a rule about social apps — the
 requirement was reported to the apps least likely to be surprised by it and
 withheld from everyone else.
 
-Carries `applies_to.effective`, so it is verified against the **policy sources**,
-not the guidelines page — the guidelines page does not mention it. On a run where
-the policy sources were not retrieved, this item's citation state is
-`unverified`, and the report must say so rather than presenting the date as
-confirmed. It carries no guideline anchor: the requirement is announced through
+Carries `applies_to.effective`, so it rests on the **policy sources**, not the
+guidelines page — the guidelines page does not mention it. The policy source's
+state is `retrieved` at most, because no check compares this item with the
+policy text; on a run where the policy sources were not retrieved it is
+`unverified`. Either way the report must not present the date as confirmed. It carries no guideline anchor: the requirement is announced through
 Apple's policy channel and App Store Connect, not through a numbered clause.
 
 Omit `found_because`. Nothing found it; it always applies.

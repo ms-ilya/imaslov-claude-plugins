@@ -43,6 +43,7 @@ Multi-agent code review using 5 parallel agents across a 4-stage pipeline. Can r
 - Per-file analysis: unused code, force unwraps, memory leaks, threading, Swift Concurrency (`@Sendable`, actor isolation, continuations), naming
 - Cross-file analysis: duplicate code, breaking API changes (including deleted functions), design violations with over-engineering check
 - Test-aware: reports fewer warnings for test files
+- Verified: an independent agent re-reads the code behind every critical and warning finding; what it can disprove is dropped with the reason, what it cannot decide is marked unverified
 - Resumable: picks up where it left off if interrupted
 
 **Commands and skills:**
@@ -74,7 +75,7 @@ Individual stage commands for debugging, partial re-runs, or splitting across se
 
 #### [appstore-guideline-auditor](./plugins/appstore-guideline-auditor)
 
-Audits a native iOS Xcode project for App Store rejection risks against a checked rule catalogue. Read-only: it modifies nothing that was already in the project and creates exactly one file, its report.
+Audits a native iOS Xcode project for App Store rejection risks against a checked rule catalogue. Read-only: it modifies nothing that was already in the project and creates exactly one file, its report, and it checks that against a file list taken when the audit starts.
 
 Distinct from the two review plugins above. They ask whether your Swift is good; this asks whether Apple will reject it.
 
@@ -104,42 +105,71 @@ Distinct from the two review plugins above. They ask whether your Swift is good;
 
 ### Planning and specification
 
-#### [feature-spec](./plugins/feature-spec)
+#### [grill-me](./plugins/grill-me)
 
-Bounded, resumable requirements interview that ends in a critic-verified spec, and a separate command that turns that spec into a checked implementation plan. The interview stops at the spec and never learns a plan can follow it — a spec written as a gate on the way to code gets optimised to be *passed* rather than to be good.
+Pre-task interview that ends in a written brief and a verdict on whether you are ready to start. It is for the part models still do poorly on their own: finding the requirement you never stated, and knowing when to stop asking.
 
-- Grounds itself in the repo first: read-only agents answer specific questions so you are never asked what the code already says
-- Capped interview rounds tracked against a fixed 10-category coverage taxonomy, re-scored and printed every round
-- Compaction-proof: every answer is written to a design record **with its reasoning** the moment it is given, so drafting reads the record rather than the conversation
-- Enforces the rules your repo already wrote down (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/*.md`) and ships none of its own; a justified deviation is recorded with the rule quoted verbatim
-- Every requirement and success criterion carries a source tag naming where in the record it came from — anything untraceable is cut or marked, never asserted
-- Proposes competing strategies and records the chosen one *and the rejected ones*, with reasons
-- Builds a project glossary during the interview and promotes hard-to-reverse decisions to ADRs via a three-part test
-- An independent critic scores the draft before anything is written, and cannot rubber-stamp: zero findings requires a list of what it checked, cited verbatim
-- Detachable Swift/iOS layer that loads only on stack detection
-- Ships deterministic validators that check the plugin's **own output** — the design record after every round, the draft before the critic, the plan against its spec — rather than trusting prose rules, and that refuse to report a pass they did not actually establish
-- The plan stage proves the join to the spec **in both directions**: no task may cite a requirement the spec does not define, and no requirement may be silently dropped — every one is covered by a task or listed as deliberately not planned, with a reason
-- Task done-conditions are the spec's own acceptance scenarios, quoted and looked up rather than restated; milestones come from the spec's P1/P2/P3 priorities, so the first one is a shippable slice by construction
-- Every implementation decision the spec did not settle is recorded as an assumption with its reversal cost — the spec names no type or library by design, so those choices are new and have to read as new
+- Reads everything you hand it first, and checks claims about the code against the code
+- States its assumptions before asking anything, ordered by how much breaks if one is wrong; you correct only what is wrong
+- Says what each assumption rests on: a line it opened, your own words, or "a guess". A file or link it could not open is named, never summarised
+- Asks a question only when two plausible answers lead to materially different work, or a wrong guess would be expensive to undo; every question carries a recommended answer
+- Looks for what you have not thought of: pre-mortem, riskiest assumption, example mapping, a blindspot pass for unfamiliar territory, an integration check across your answers
+- Says "nothing worth asking" on a small, fully specified task instead of running an interview anyway
+- Writes one brief that keeps what you decided apart from what was only assumed, with the full Q&A
 
 **Commands:**
 
 | Command | What it does |
 |---------|--------------|
-| `/feature-spec <idea>` | Full pipeline: ground, interview, strategy, draft, critique, write |
-| `/feature-spec-grill <idea>` | Interview stages only — **writes the design record, glossary and ADRs, but no spec** |
-| `/feature-spec-write <slug>` | Draft, critique and write from an existing design record, in a fresh session |
+| `/grill-me <what you have>` | In-depth interview: rounds of questions until the answers stop changing the work, then the brief |
+| `/grill-me --fast <what you have>` | The 80/20 version: one round of at most four questions, top risks stated rather than asked |
+
+**Produces:** `docs/briefs/<date>-<slug>.md`
+
+**Stops at the brief.** No implementation, no design, no spec. Hand the brief to `/feature-spec`, plan mode or a fresh session.
+
+**Works with:** any task, code or not; grounds itself in the repository when there is one
+
+---
+
+#### [feature-spec](./plugins/feature-spec)
+
+Turns what you already have into a critic-verified spec, and a separate command turns that spec into a checked implementation plan. The spec run stops at the spec and never learns a plan can follow it — a spec written as a gate on the way to code gets optimised to be *passed* rather than to be good.
+
+- Takes an idea, a brief, or any documents you pass; decisions you already made are recorded and never asked again
+- Reads a document, does not believe it: every claim about the repo is checked against the code and graded confirmed, contradicted or unverifiable
+- A decision taken from your document keeps your wording: a script compares each one with the document and fails a paraphrase
+- Asks only about what is still unclear, tracked against a fixed 10-category coverage taxonomy: no round for complete input, two short rounds at most
+- Compaction-proof: every decision is written to a design record **with its reasoning** the moment it is known, so drafting reads the record rather than the conversation
+- Enforces the rules you already wrote down (`AGENTS.md`, `CLAUDE.md`, `.claude/rules/*.md`, project and user level) and ships none of its own; a justified deviation is recorded with the rule quoted verbatim
+- Every requirement, success criterion, scope line and constraint carries a source tag naming where in the record it came from — anything untraceable is cut or marked, never asserted
+- The spec that ships is the draft that was checked: publishing renames the file, so nothing is retyped after the checks ran
+- Proposes competing strategies and records the chosen one *and the rejected ones*, with reasons
+- Builds a project glossary and promotes hard-to-reverse decisions to ADRs via a three-part test
+- An independent critic scores the draft before anything is written, and cannot rubber-stamp: zero findings requires a list of what it checked, and every quote in its reply is compared with what it was shown
+- Every `path:line` a grounding fact cites is opened by a script: a file that is not there, or a line past its end, fails the record
+- Detachable Swift/iOS, TypeScript and Python layers that load only on stack detection
+- Ships deterministic validators that check the plugin's **own output** — the design record, the draft before the critic, the plan against its spec — and that refuse to report a pass they did not actually establish
+- The plan stage proves the join to the spec **in both directions**: no task may cite a requirement the spec does not define, and no requirement may be silently dropped
+- Task done-conditions are the spec's own acceptance scenarios, quoted and looked up rather than restated; milestones come from the spec's P1/P2/P3 priorities
+- Every implementation decision the spec did not settle is recorded as an assumption with its reversal cost
+
+**Commands:**
+
+| Command | What it does |
+|---------|--------------|
+| `/feature-spec <idea and/or documents>` | Intake, clarify only what is unclear, strategy, draft, critique, publish |
 | `/feature-spec-plan <slug>` | Turn a finished spec into ordered tasks with milestones, dependencies and quoted done-conditions — then have a critic score the plan |
 
-**Interview flags** (`/feature-spec`, `/feature-spec-grill`): `--fast` (one round, ~5 min, no critic) · `--deep` (up to 5 rounds, critic panel) · `--resume` · `--scope <path>` · `--prior-art <doc.md>` (the input is an existing analysis document, and Phase 1's job becomes falsifying its claims against the code)
+**Spec flags** (`/feature-spec`): `--resume` (finish a run that stopped) · `--scope <path>` (confine grounding to one directory)
 
-**Plan flags** (`/feature-spec-plan`): `--from-spec <path>` · `--out <dir>` · `--tasks-only`
+**Plan flags** (`/feature-spec-plan`): `--extend` (keep the existing tasks, add what the spec gained) · `--tasks-only` · `--from-spec <path>` · `--out <dir>`
 
 **Produces:** `docs/specs/<date>-<slug>/{spec.md, tree.md, critique.md, traceability.md}`, `plan/{plan.md, tasks/T0N.md, plan-critique.md}` if you run the plan command, `docs/specs/GLOSSARY.md`, and ADRs in `docs/adr/`
 
 **Stops at the plan.** No code, no `/implement`, and no estimates in hours or days at either stage.
 
-**Works with:** any project; sharpest on iOS/Swift
+**Works with:** any project; sharpest on iOS/Swift. Pairs with `grill-me`: pass its brief as the input
 
 ---
 
@@ -211,7 +241,7 @@ Multi-agent debate that analyzes topics from genuinely different perspectives.
 
 | Component | Name | Trigger |
 |-----------|------|---------|
-| Skill | `/multi-agent-debate` | "debate", "red team", "devil's advocate", "analyze from all angles" |
+| Skill | `/multi-agent-debate` | "debate this", "red team", "devil's advocate", "steelman", "argue both sides" |
 | Agent | `debate-agent` | Spawned automatically by the skill for each participant |
 
 **Works with:** Any topic; technical decisions, strategies, proposals, tradeoffs
@@ -350,6 +380,7 @@ The same operations are available as CLI commands:
 | `multi-agent-debate` | `/plugin install multi-agent-debate@imaslov-claude-plugins` |
 | `root-cause-analysis` | `/plugin install root-cause-analysis@imaslov-claude-plugins` |
 | `humanizer` | `/plugin install humanizer@imaslov-claude-plugins` |
+| `grill-me` | `/plugin install grill-me@imaslov-claude-plugins` |
 | `feature-spec` | `/plugin install feature-spec@imaslov-claude-plugins` |
 
 ### Managing plugins
